@@ -1,0 +1,19 @@
+-- Down Migration: 009_job_management
+DROP TABLE IF EXISTS job_management_competency_groups;
+DROP TABLE IF EXISTS job_management_scores;
+DROP TABLE IF EXISTS job_management_potency_competencies;
+DROP TABLE IF EXISTS job_management_financials;
+DROP TABLE IF EXISTS job_management_assets;
+DROP TABLE IF EXISTS job_management_subordinate_controls;
+DROP TABLE IF EXISTS job_management_relationships;
+DROP TABLE IF EXISTS job_management_working_risks;
+DROP TABLE IF EXISTS job_management_working_activities;
+DROP TABLE IF EXISTS job_management_operational_authorities;
+DROP TABLE IF EXISTS job_management_hr_authorities;
+DROP TABLE IF EXISTS job_management_education_experiences;
+DROP TABLE IF EXISTS job_management_responsibilities;
+DROP TABLE IF EXISTS job_management_identifications;
+DROP TABLE IF EXISTS job_management_objectives;
+DROP TABLE IF EXISTS job_management_values;
+DROP TABLE IF EXISTS job_management_title_subs;
+DROP TABLE IF EXISTS job_management_titles;

@@ -1,0 +1,74 @@
+# HRIS Platform Configuration
+# Dapat di-override via environment variables dengan prefix HRIS_
+# Contoh: HRIS_DATABASE_PLATFORM_HOST=prod-db.example.com
+
+server:
+  port: "8080"
+  mode: "debug"            # debug, release, test
+  read_timeout: 30
+  write_timeout: 30
+
+database:
+  # Driver database: "postgres" atau "mysql"
+  driver: "mysql"
+
+  # Platform database (single DB untuk manajemen platform)
+  platform_host: "localhost"
+  platform_port: 3306
+  platform_db: "hris_platform"
+  platform_user: "root"
+  platform_password: ""
+  # sslmode hanya untuk postgres, tidak dipakai mysql
+
+  # Tenant database settings
+  tenant_host: "localhost"
+  tenant_port: 3306
+  tenant_super_user: "root"
+  tenant_super_password: ""
+  # tenant_sslmode: "disable"
+
+  # Connection pool
+  max_open_conns: 25
+  max_idle_conns: 10
+  conn_max_lifetime_ms: 3600000  # 1 jam
+
+redis:
+  host: "localhost"
+  port: 6379
+  password: ""
+  db: 0
+
+jwt:
+  secret: "change-this-to-a-strong-secret-in-production"
+  access_token_ttl: 15     # menit
+  refresh_token_ttl: 24    # jam
+  issuer: "hris-platform"
+
+logger:
+  level: "debug"            # debug, info, warn, error
+  format: "console"         # json, console
+  output_path: "stdout"
+
+otel:
+  enabled: false
+  service_name: "hris-platform"
+  collector_endpoint: "localhost:4317"
+  sample_rate: 0.1
+
+cors:
+  allowed_origins:
+    - "*"
+  allowed_methods:
+    - "GET"
+    - "POST"
+    - "PUT"
+    - "PATCH"
+    - "DELETE"
+    - "OPTIONS"
+  allowed_headers:
+    - "Origin"
+    - "Content-Type"
+    - "Accept"
+    - "Authorization"
+  allow_credentials: true
+  max_age: 86400

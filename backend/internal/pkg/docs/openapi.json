@@ -1,0 +1,1698 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "HRIS Platform API",
+    "description": "API untuk HRIS Platform Enterprise — modular monolith dengan multi-tenant architecture. Mendukung PostgreSQL dan MySQL.\n\n## Authentication\n\nSemua endpoint tenant (prefixed `/api/v1/tenant`) memerlukan JWT Bearer Token:\n```\nAuthorization: Bearer <access_token>\n```\n\nUntuk mendapatkan token, login via platform endpoint.\n\n## RBAC (Role-Based Access Control)\n\nPlatform menggunakan RBAC dengan 2 role:\n\n| Role | Akses |\n|------|-------|\n| **super_admin** | Akses penuh ke semua resource platform |\n| **company_admin** | Akses view-only ke company, user, license miliknya sendiri |\n\nEndpoint yang memerlukan proteksi akan mengembalikan **403 Forbidden** jika role tidak memiliki permission yang sesuai.\n\n### Permission Format\n\nSetiap endpoint memiliki permission requirement dalam format `resource.action`:\n```\ncompany.view, company.create, company.update, company.delete\ncompany.suspend, company.activate, company.terminate, company.backup, company.restore\nuser.view, user.create, user.update\nmodule.view, module.create, module.update, module.activate, module.deactivate\nlicense.view, license.create, license.update\nmonitoring.view\nemployee.address.create, employee.address.update, employee.address.delete\nemployee.contact.create, employee.contact.update, employee.contact.delete\nemployee.family.create, employee.family.update, employee.family.delete\nemployee.education.create, employee.education.update, employee.education.delete\nemployee.experience.create, employee.experience.update, employee.experience.delete\nemployee.document.create, employee.document.update, employee.document.delete\nemployee.insurance.create, employee.insurance.update, employee.insurance.delete\nemployee.employment.create, employee.employment.update, employee.employment.delete\n```\n\n### Company Lifecycle Actions\n\n| Action | Endpoint | DB Cleanup |\n|--------|----------|------------|\n| **Provision** | `POST /companies` | ✅ Create DB + 106 tables |\n| **Suspend** | `POST /companies/:id/suspend` | ✅ Deactivate connection |\n| **Activate** | `POST /companies/:id/activate` | ✅ Reactivate connection |\n| **Soft Delete** | `DELETE /companies/:id` | ✅ Deactivate connection |\n| **Terminate** | `POST /companies/:id/terminate` | ✅ Drop DB + remove connection |\n\n## Base URL\n\n```\nDevelopment: http://localhost:8080\n```",
+    "version": "1.4.0",
+    "contact": {
+      "name": "HRIS Platform Team",
+      "email": "dev@hris-platform.com"
+    }
+  },
+  "servers": [
+    {
+      "url": "http://localhost:8080",
+      "description": "Local Development"
+    }
+  ],
+  "tags": [
+    {
+      "name": "Health",
+      "description": "Health check endpoints"
+    },
+    {
+      "name": "Platform: Auth",
+      "description": "Platform authentication (login, refresh token)"
+    },
+    {
+      "name": "Platform: Users",
+      "description": "Platform user management"
+    },
+    {
+      "name": "Platform: Companies",
+      "description": "Company/Tenant management"
+    },
+    {
+      "name": "Platform: Modules",
+      "description": "Module registration and activation management"
+    },
+    {
+      "name": "Platform: Licenses",
+      "description": "License management for companies"
+    },
+    {
+      "name": "Platform: Monitoring",
+      "description": "Platform and tenant health monitoring"
+    },
+    {
+      "name": "Tenant: Organizations",
+      "description": "Organization structure (tree hierarchy)"
+    },
+    {
+      "name": "Tenant: Employees",
+      "description": "Employee management with 8 sub-modules (addresses, emergency contacts, families, educations, experiences, documents, insurances, employments)"
+    }
+  ],
+  "paths": {
+    "/healthz": {
+      "get": {
+        "tags": ["Health"],
+        "summary": "Server health check",
+        "operationId": "healthCheck",
+        "responses": {
+          "200": {
+            "description": "Server is healthy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": { "type": "string", "example": "ok" },
+                    "service": { "type": "string", "example": "hris-platform" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/readyz": {
+      "get": {
+        "tags": ["Health"],
+        "summary": "Readiness check",
+        "operationId": "readyCheck",
+        "responses": {
+          "200": {
+            "description": "Server is ready",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": { "type": "string", "example": "ok" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/platform/login": {
+      "post": {
+        "tags": ["Platform: Auth"],
+        "summary": "Platform admin login",
+        "operationId": "platformLogin",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/LoginRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Login successful, returns JWT tokens" },
+          "401": { "description": "Invalid credentials" }
+        }
+      }
+    },
+    "/api/v1/platform/refresh": {
+      "post": {
+        "tags": ["Platform: Auth"],
+        "summary": "Refresh access token",
+        "operationId": "refreshToken",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/RefreshTokenRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "New access token generated" },
+          "401": { "description": "Invalid refresh token" }
+        }
+      }
+    },
+    "/api/v1/platform/users": {
+      "get": {
+        "tags": ["Platform: Users"],
+        "summary": "List all platform users",
+        "operationId": "listUsers",
+        "parameters": [
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
+          { "name": "per_page", "in": "query", "schema": { "type": "integer", "default": 20 } }
+        ],
+        "x-rbac": {
+          "permission": "user.view",
+          "roles": ["super_admin", "company_admin"]
+        },
+        "responses": {
+          "200": { "description": "Paginated list of platform users" },
+          "403": { "description": "Forbidden: role tidak memiliki permission user.view" }
+        }
+      },
+      "post": {
+        "tags": ["Platform: Users"],
+        "summary": "Create a new platform user",
+        "operationId": "createUser",
+        "x-rbac": {
+          "permission": "user.create",
+          "roles": ["super_admin"]
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreateUserRequest" }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "User created successfully" },
+          "400": { "description": "Validation error" },
+          "403": { "description": "Forbidden: hanya super_admin yang dapat membuat user" },
+          "409": { "description": "Email already registered" }
+        }
+      }
+    },
+    "/api/v1/platform/users/{id}": {
+      "get": {
+        "tags": ["Platform: Users"],
+        "summary": "Get platform user by ID",
+        "operationId": "getUser",
+        "x-rbac": {
+          "permission": "user.view",
+          "roles": ["super_admin", "company_admin"]
+        },
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "200": { "description": "User details" },
+          "403": { "description": "Forbidden" },
+          "404": { "description": "User not found" }
+        }
+      },
+      "put": {
+        "tags": ["Platform: Users"],
+        "summary": "Update platform user",
+        "operationId": "updateUser",
+        "x-rbac": {
+          "permission": "user.update",
+          "roles": ["super_admin"]
+        },
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/UpdateUserRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "User updated" },
+          "403": { "description": "Forbidden: hanya super_admin yang dapat update user" },
+          "404": { "description": "User not found" }
+        }
+      }
+    },
+    "/api/v1/platform/companies": {
+      "post": {
+        "tags": ["Platform: Companies"],
+        "summary": "Create a new company/tenant",
+        "operationId": "createCompany",
+        "x-rbac": { "permission": "company.create", "roles": ["super_admin"] },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreateCompanyRequest" }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "Company created successfully" },
+          "400": { "description": "Validation error" },
+          "403": { "description": "Forbidden: hanya super_admin" }
+        }
+      },
+      "get": {
+        "tags": ["Platform: Companies"],
+        "summary": "List all companies",
+        "operationId": "listCompanies",
+        "x-rbac": { "permission": "company.view", "roles": ["super_admin", "company_admin"] },
+        "parameters": [
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
+          { "name": "per_page", "in": "query", "schema": { "type": "integer", "default": 20 } }
+        ],
+        "responses": {
+          "200": { "description": "Paginated list of companies" },
+          "403": { "description": "Forbidden" }
+        }
+      }
+    },
+    "/api/v1/platform/companies/{id}": {
+      "get": {
+        "tags": ["Platform: Companies"],
+        "summary": "Get company by ID",
+        "operationId": "getCompany",
+        "x-rbac": { "permission": "company.view", "roles": ["super_admin", "company_admin"] },
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "200": { "description": "Company details" },
+          "403": { "description": "Forbidden" },
+          "404": { "description": "Company not found" }
+        }
+      },
+      "put": {
+        "tags": ["Platform: Companies"],
+        "summary": "Update company",
+        "operationId": "updateCompany",
+        "x-rbac": { "permission": "company.update", "roles": ["super_admin"] },
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/UpdateCompanyRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Company updated" },
+          "403": { "description": "Forbidden: hanya super_admin" }
+        }
+      },
+      "delete": {
+        "tags": ["Platform: Companies"],
+        "summary": "Soft delete company (deactivate connection + deleted_at)",
+        "operationId": "deleteCompany",
+        "x-rbac": { "permission": "company.delete", "roles": ["super_admin"] },
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "200": { "description": "Company soft deleted — connection deactivated" },
+          "403": { "description": "Forbidden: hanya super_admin" }
+        }
+      }
+    },
+    "/api/v1/platform/companies/{id}/suspend": {
+      "post": {
+        "tags": ["Platform: Companies"],
+        "summary": "Suspend a company/tenant (deactivate connection)",
+        "operationId": "suspendCompany",
+        "x-rbac": { "permission": "company.suspend", "roles": ["super_admin"] },
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "200": { "description": "Company suspended" },
+          "403": { "description": "Forbidden: hanya super_admin" }
+        }
+      }
+    },
+    "/api/v1/platform/companies/{id}/activate": {
+      "post": {
+        "tags": ["Platform: Companies"],
+        "summary": "Activate a company/tenant (reactivate connection)",
+        "operationId": "activateCompany",
+        "x-rbac": { "permission": "company.activate", "roles": ["super_admin"] },
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "200": { "description": "Company activated" },
+          "403": { "description": "Forbidden: hanya super_admin" }
+        }
+      }
+    },
+    "/api/v1/platform/companies/{id}/terminate": {
+      "post": {
+        "tags": ["Platform: Companies"],
+        "summary": "Terminate a company/tenant (drop database + remove connection)",
+        "operationId": "terminateCompany",
+        "x-rbac": { "permission": "company.terminate", "roles": ["super_admin"] },
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "200": { "description": "Company terminated — database dropped and connection removed" },
+          "403": { "description": "Forbidden: hanya super_admin" },
+          "409": { "description": "Conflict: cannot terminate (e.g., already terminated)" }
+        }
+      }
+    },
+    "/api/v1/platform/companies/{id}/backup": {
+      "post": {
+        "tags": ["Platform: Companies"],
+        "summary": "Trigger tenant backup (Phase 2)",
+        "operationId": "backupCompany",
+        "x-rbac": { "permission": "company.backup", "roles": ["super_admin"] },
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "200": { "description": "Backup initiated (Phase 2)" },
+          "403": { "description": "Forbidden" }
+        }
+      }
+    },
+    "/api/v1/platform/companies/{id}/restore": {
+      "post": {
+        "tags": ["Platform: Companies"],
+        "summary": "Trigger tenant restore (Phase 2)",
+        "operationId": "restoreCompany",
+        "x-rbac": { "permission": "company.restore", "roles": ["super_admin"] },
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "200": { "description": "Restore initiated (Phase 2)" },
+          "403": { "description": "Forbidden" }
+        }
+      }
+    },
+    "/api/v1/platform/modules": {
+      "get": {
+        "tags": ["Platform: Modules"],
+        "summary": "List all registered modules",
+        "operationId": "listModules",
+        "x-rbac": { "permission": "module.view", "roles": ["super_admin"] },
+        "parameters": [
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
+          { "name": "per_page", "in": "query", "schema": { "type": "integer", "default": 20 } }
+        ],
+        "responses": {
+          "200": { "description": "Paginated list of modules" },
+          "403": { "description": "Forbidden: hanya super_admin" }
+        }
+      },
+      "post": {
+        "tags": ["Platform: Modules"],
+        "summary": "Register a new module",
+        "operationId": "createModule",
+        "x-rbac": { "permission": "module.create", "roles": ["super_admin"] },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreateModuleRequest" }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "Module registered" },
+          "403": { "description": "Forbidden: hanya super_admin" },
+          "409": { "description": "Module slug already exists" }
+        }
+      }
+    },
+    "/api/v1/platform/modules/{id}": {
+      "get": {
+        "tags": ["Platform: Modules"],
+        "summary": "Get module by ID",
+        "operationId": "getModule",
+        "x-rbac": { "permission": "module.view", "roles": ["super_admin"] },
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "200": { "description": "Module details" },
+          "403": { "description": "Forbidden" },
+          "404": { "description": "Module not found" }
+        }
+      },
+      "put": {
+        "tags": ["Platform: Modules"],
+        "summary": "Update module",
+        "operationId": "updateModule",
+        "x-rbac": { "permission": "module.update", "roles": ["super_admin"] },
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/UpdateModuleRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Module updated" },
+          "403": { "description": "Forbidden: hanya super_admin" }
+        }
+      }
+    },
+    "/api/v1/platform/modules/{id}/companies": {
+      "get": {
+        "tags": ["Platform: Modules"],
+        "summary": "List companies using this module",
+        "operationId": "listModuleCompanies",
+        "x-rbac": { "permission": "module.view", "roles": ["super_admin"] },
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
+          { "name": "company_id", "in": "query", "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "200": { "description": "List of companies with module status" },
+          "403": { "description": "Forbidden" }
+        }
+      }
+    },
+    "/api/v1/platform/modules/{id}/activate": {
+      "post": {
+        "tags": ["Platform: Modules"],
+        "summary": "Activate module for a company",
+        "operationId": "activateModule",
+        "x-rbac": { "permission": "module.activate", "roles": ["super_admin"] },
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/ToggleModuleRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Module activated for company" },
+          "403": { "description": "Forbidden: hanya super_admin" }
+        }
+      }
+    },
+    "/api/v1/platform/modules/{id}/deactivate": {
+      "post": {
+        "tags": ["Platform: Modules"],
+        "summary": "Deactivate module for a company",
+        "operationId": "deactivateModule",
+        "x-rbac": { "permission": "module.deactivate", "roles": ["super_admin"] },
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/ToggleModuleRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Module deactivated for company" },
+          "403": { "description": "Forbidden: hanya super_admin" }
+        }
+      }
+    },
+    "/api/v1/platform/licenses": {
+      "get": {
+        "tags": ["Platform: Licenses"],
+        "summary": "List all licenses",
+        "operationId": "listLicenses",
+        "x-rbac": { "permission": "license.view", "roles": ["super_admin", "company_admin"] },
+        "parameters": [
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
+          { "name": "per_page", "in": "query", "schema": { "type": "integer", "default": 20 } }
+        ],
+        "responses": {
+          "200": { "description": "Paginated list of licenses" },
+          "403": { "description": "Forbidden" }
+        }
+      },
+      "post": {
+        "tags": ["Platform: Licenses"],
+        "summary": "Create a new license for company",
+        "operationId": "createLicense",
+        "x-rbac": { "permission": "license.create", "roles": ["super_admin"] },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreateLicenseRequest" }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "License created" },
+          "400": { "description": "Validation error" },
+          "403": { "description": "Forbidden: hanya super_admin" }
+        }
+      }
+    },
+    "/api/v1/platform/licenses/{id}": {
+      "get": {
+        "tags": ["Platform: Licenses"],
+        "summary": "Get license by ID",
+        "operationId": "getLicense",
+        "x-rbac": { "permission": "license.view", "roles": ["super_admin", "company_admin"] },
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "200": { "description": "License details" },
+          "403": { "description": "Forbidden" },
+          "404": { "description": "License not found" }
+        }
+      },
+      "put": {
+        "tags": ["Platform: Licenses"],
+        "summary": "Update license",
+        "operationId": "updateLicense",
+        "x-rbac": { "permission": "license.update", "roles": ["super_admin"] },
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/UpdateLicenseRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "License updated" },
+          "403": { "description": "Forbidden: hanya super_admin" }
+        }
+      }
+    },
+    "/api/v1/platform/monitoring/health": {
+      "get": {
+        "tags": ["Platform: Monitoring"],
+        "summary": "Platform health check with database status",
+        "operationId": "platformHealth",
+        "x-rbac": { "permission": "monitoring.view", "roles": ["super_admin"] },
+        "responses": {
+          "200": {
+            "description": "Platform health status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean" },
+                    "status": { "type": "string", "enum": ["healthy", "degraded"] },
+                    "database": {
+                      "type": "object",
+                      "additionalProperties": { "type": "string" }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": { "description": "Forbidden: hanya super_admin" }
+        }
+      }
+    },
+    "/api/v1/platform/monitoring/tenants": {
+      "get": {
+        "tags": ["Platform: Monitoring"],
+        "summary": "List all active tenant connections health",
+        "operationId": "tenantHealthList",
+        "x-rbac": { "permission": "monitoring.view", "roles": ["super_admin"] },
+        "responses": {
+          "200": { "description": "List of tenant health statuses" },
+          "403": { "description": "Forbidden: hanya super_admin" }
+        }
+      }
+    },
+    "/api/v1/platform/monitoring/tenants/{id}": {
+      "get": {
+        "tags": ["Platform: Monitoring"],
+        "summary": "Get tenant connection health detail",
+        "operationId": "tenantHealthDetail",
+        "x-rbac": { "permission": "monitoring.view", "roles": ["super_admin"] },
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "200": { "description": "Tenant health detail" },
+          "403": { "description": "Forbidden" },
+          "404": { "description": "Tenant connection not found" }
+        }
+      }
+    },
+    "/api/v1/tenant/organizations": {
+      "get": {
+        "tags": ["Tenant: Organizations"],
+        "summary": "List organizations or get tree",
+        "operationId": "listOrganizations",
+        "parameters": [
+          { "name": "tree", "in": "query", "schema": { "type": "string", "enum": ["true", "false"] } },
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
+          { "name": "per_page", "in": "query", "schema": { "type": "integer", "default": 20 } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "responses": { "200": { "description": "Organizations list or tree" } }
+      },
+      "post": {
+        "tags": ["Tenant: Organizations"],
+        "summary": "Create organization",
+        "operationId": "createOrganization",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreateOrganizationRequest" }
+            }
+          }
+        },
+        "responses": { "201": { "description": "Organization created" } }
+      }
+    },
+    "/api/v1/tenant/organizations/{id}": {
+      "get": {
+        "tags": ["Tenant: Organizations"],
+        "summary": "Get organization by ID",
+        "operationId": "getOrganization",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "responses": { "200": { "description": "Organization details" }, "404": { "description": "Not found" } }
+      },
+      "put": {
+        "tags": ["Tenant: Organizations"],
+        "summary": "Update organization",
+        "operationId": "updateOrganization",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/UpdateOrganizationRequest" }
+            }
+          }
+        },
+        "responses": { "200": { "description": "Organization updated" } }
+      },
+      "delete": {
+        "tags": ["Tenant: Organizations"],
+        "summary": "Delete organization",
+        "operationId": "deleteOrganization",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "responses": { "200": { "description": "Organization deleted" } }
+      }
+    },
+    "/api/v1/tenant/employees": {
+      "get": {
+        "tags": ["Tenant: Employees"],
+        "summary": "List employees with pagination",
+        "operationId": "listEmployees",
+        "parameters": [
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
+          { "name": "per_page", "in": "query", "schema": { "type": "integer", "default": 20 } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": {
+            "description": "Paginated list of employees",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/EmployeeListResponse" }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": ["Tenant: Employees"],
+        "summary": "Create a new employee",
+        "operationId": "createEmployee",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreateEmployeeRequest" }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "Employee created" },
+          "400": { "description": "Validation error" }
+        }
+      }
+    },
+    "/api/v1/tenant/employees/{id}": {
+      "get": {
+        "tags": ["Tenant: Employees"],
+        "summary": "Get employee by ID with all sub-modules",
+        "operationId": "getEmployee",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": { "description": "Employee details with addresses, families, educations, etc." },
+          "404": { "description": "Employee not found" }
+        }
+      },
+      "put": {
+        "tags": ["Tenant: Employees"],
+        "summary": "Update employee",
+        "operationId": "updateEmployee",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/UpdateEmployeeRequest" }
+            }
+          }
+        },
+        "responses": { "200": { "description": "Employee updated" } }
+      },
+      "delete": {
+        "tags": ["Tenant: Employees"],
+        "summary": "Delete employee (hard delete)",
+        "operationId": "deleteEmployee",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "responses": { "200": { "description": "Employee deleted" } }
+      }
+    },
+    "/api/v1/tenant/employees/{id}/addresses": {
+      "post": {
+        "tags": ["Tenant: Employees"],
+        "summary": "Create employee address (type: MAIN/DOMICILE)",
+        "operationId": "createEmployeeAddress",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreateAddressRequest" }
+            }
+          }
+        },
+        "responses": { "201": { "description": "Address created" } }
+      }
+    },
+    "/api/v1/tenant/employees/{id}/addresses/{addressId}": {
+      "put": {
+        "tags": ["Tenant: Employees"],
+        "summary": "Update employee address",
+        "operationId": "updateEmployeeAddress",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
+          { "name": "addressId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/UpdateAddressRequest" }
+            }
+          }
+        },
+        "responses": { "200": { "description": "Address updated" } }
+      },
+      "delete": {
+        "tags": ["Tenant: Employees"],
+        "summary": "Delete employee address",
+        "operationId": "deleteEmployeeAddress",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
+          { "name": "addressId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "responses": { "200": { "description": "Address deleted" } }
+      }
+    },
+    "/api/v1/tenant/employees/{id}/emergency-contacts": {
+      "post": {
+        "tags": ["Tenant: Employees"],
+        "summary": "Create emergency contact",
+        "operationId": "createEmployeeContact",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreateEmergencyContactRequest" }
+            }
+          }
+        },
+        "responses": { "201": { "description": "Emergency contact created" } }
+      }
+    },
+    "/api/v1/tenant/employees/{id}/emergency-contacts/{contactId}": {
+      "put": {
+        "tags": ["Tenant: Employees"],
+        "summary": "Update emergency contact",
+        "operationId": "updateEmployeeContact",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
+          { "name": "contactId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/UpdateEmergencyContactRequest" }
+            }
+          }
+        },
+        "responses": { "200": { "description": "Emergency contact updated" } }
+      },
+      "delete": {
+        "tags": ["Tenant: Employees"],
+        "summary": "Delete emergency contact",
+        "operationId": "deleteEmployeeContact",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
+          { "name": "contactId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "responses": { "200": { "description": "Emergency contact deleted" } }
+      }
+    },
+    "/api/v1/tenant/employees/{id}/families": {
+      "post": {
+        "tags": ["Tenant: Employees"],
+        "summary": "Create family member",
+        "operationId": "createEmployeeFamily",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreateFamilyRequest" }
+            }
+          }
+        },
+        "responses": { "201": { "description": "Family member created" } }
+      }
+    },
+    "/api/v1/tenant/employees/{id}/families/{familyId}": {
+      "put": {
+        "tags": ["Tenant: Employees"],
+        "summary": "Update family member",
+        "operationId": "updateEmployeeFamily",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
+          { "name": "familyId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/UpdateFamilyRequest" }
+            }
+          }
+        },
+        "responses": { "200": { "description": "Family member updated" } }
+      },
+      "delete": {
+        "tags": ["Tenant: Employees"],
+        "summary": "Delete family member",
+        "operationId": "deleteEmployeeFamily",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
+          { "name": "familyId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "responses": { "200": { "description": "Family member deleted" } }
+      }
+    },
+    "/api/v1/tenant/employees/{id}/educations": {
+      "post": {
+        "tags": ["Tenant: Employees"],
+        "summary": "Create education record",
+        "operationId": "createEmployeeEducation",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreateEducationRequest" }
+            }
+          }
+        },
+        "responses": { "201": { "description": "Education created" } }
+      }
+    },
+    "/api/v1/tenant/employees/{id}/educations/{educationId}": {
+      "put": {
+        "tags": ["Tenant: Employees"],
+        "summary": "Update education record",
+        "operationId": "updateEmployeeEducation",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
+          { "name": "educationId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/UpdateEducationRequest" }
+            }
+          }
+        },
+        "responses": { "200": { "description": "Education updated" } }
+      },
+      "delete": {
+        "tags": ["Tenant: Employees"],
+        "summary": "Delete education record",
+        "operationId": "deleteEmployeeEducation",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
+          { "name": "educationId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "responses": { "200": { "description": "Education deleted" } }
+      }
+    },
+    "/api/v1/tenant/employees/{id}/experiences": {
+      "post": {
+        "tags": ["Tenant: Employees"],
+        "summary": "Create work experience",
+        "operationId": "createEmployeeExperience",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreateExperienceRequest" }
+            }
+          }
+        },
+        "responses": { "201": { "description": "Experience created" } }
+      }
+    },
+    "/api/v1/tenant/employees/{id}/experiences/{experienceId}": {
+      "put": {
+        "tags": ["Tenant: Employees"],
+        "summary": "Update work experience",
+        "operationId": "updateEmployeeExperience",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
+          { "name": "experienceId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/UpdateExperienceRequest" }
+            }
+          }
+        },
+        "responses": { "200": { "description": "Experience updated" } }
+      },
+      "delete": {
+        "tags": ["Tenant: Employees"],
+        "summary": "Delete work experience",
+        "operationId": "deleteEmployeeExperience",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
+          { "name": "experienceId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "responses": { "200": { "description": "Experience deleted" } }
+      }
+    },
+    "/api/v1/tenant/employees/{id}/documents": {
+      "post": {
+        "tags": ["Tenant: Employees"],
+        "summary": "Create document",
+        "operationId": "createEmployeeDocument",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreateDocumentRequest" }
+            }
+          }
+        },
+        "responses": { "201": { "description": "Document created" } }
+      }
+    },
+    "/api/v1/tenant/employees/{id}/documents/{documentId}": {
+      "put": {
+        "tags": ["Tenant: Employees"],
+        "summary": "Update document",
+        "operationId": "updateEmployeeDocument",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
+          { "name": "documentId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/UpdateDocumentRequest" }
+            }
+          }
+        },
+        "responses": { "200": { "description": "Document updated" } }
+      },
+      "delete": {
+        "tags": ["Tenant: Employees"],
+        "summary": "Delete document",
+        "operationId": "deleteEmployeeDocument",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
+          { "name": "documentId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "responses": { "200": { "description": "Document deleted" } }
+      }
+    },
+    "/api/v1/tenant/employees/{id}/insurances": {
+      "post": {
+        "tags": ["Tenant: Employees"],
+        "summary": "Create insurance (BPJS)",
+        "operationId": "createEmployeeInsurance",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreateInsuranceRequest" }
+            }
+          }
+        },
+        "responses": { "201": { "description": "Insurance created" } }
+      }
+    },
+    "/api/v1/tenant/employees/{id}/insurances/{insuranceId}": {
+      "put": {
+        "tags": ["Tenant: Employees"],
+        "summary": "Update insurance",
+        "operationId": "updateEmployeeInsurance",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
+          { "name": "insuranceId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/UpdateInsuranceRequest" }
+            }
+          }
+        },
+        "responses": { "200": { "description": "Insurance updated" } }
+      },
+      "delete": {
+        "tags": ["Tenant: Employees"],
+        "summary": "Delete insurance",
+        "operationId": "deleteEmployeeInsurance",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
+          { "name": "insuranceId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "responses": { "200": { "description": "Insurance deleted" } }
+      }
+    },
+    "/api/v1/tenant/employees/{id}/employments": {
+      "post": {
+        "tags": ["Tenant: Employees"],
+        "summary": "Create employment record",
+        "operationId": "createEmployeeEmployment",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreateEmploymentRequest" }
+            }
+          }
+        },
+        "responses": { "201": { "description": "Employment created" } }
+      }
+    },
+    "/api/v1/tenant/employees/{id}/employments/{employmentId}": {
+      "put": {
+        "tags": ["Tenant: Employees"],
+        "summary": "Update employment record",
+        "operationId": "updateEmployeeEmployment",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
+          { "name": "employmentId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/UpdateEmploymentRequest" }
+            }
+          }
+        },
+        "responses": { "200": { "description": "Employment updated" } }
+      },
+      "delete": {
+        "tags": ["Tenant: Employees"],
+        "summary": "Delete employment record",
+        "operationId": "deleteEmployeeEmployment",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
+          { "name": "employmentId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "responses": { "200": { "description": "Employment deleted" } }
+      }
+    },
+    "/docs": {
+      "get": {
+        "tags": ["Health"],
+        "summary": "Scalar API Documentation UI",
+        "operationId": "apiDocs",
+        "responses": { "200": { "description": "Scalar API documentation UI" } }
+      }
+    },
+    "/openapi.json": {
+      "get": {
+        "tags": ["Health"],
+        "summary": "OpenAPI 3.0 Specification",
+        "operationId": "openapiSpec",
+        "responses": {
+          "200": {
+            "description": "OpenAPI JSON specification",
+            "content": { "application/json": {} }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "JWT Access Token. Dapatkan dengan login ke platform endpoint."
+      }
+    },
+    "schemas": {
+      "LoginRequest": {
+        "type": "object",
+        "required": ["email", "password"],
+        "properties": {
+          "email": { "type": "string", "format": "email", "example": "superadmin@hris-platform.com" },
+          "password": { "type": "string", "format": "password", "minLength": 6, "example": "admin123" }
+        }
+      },
+      "RefreshTokenRequest": {
+        "type": "object",
+        "required": ["refresh_token"],
+        "properties": {
+          "refresh_token": { "type": "string", "description": "Refresh token dari response login" }
+        }
+      },
+      "CreateUserRequest": {
+        "type": "object",
+        "required": ["email", "password", "name", "role"],
+        "properties": {
+          "email": { "type": "string", "format": "email" },
+          "password": { "type": "string", "minLength": 6 },
+          "name": { "type": "string", "minLength": 1 },
+          "role": { "type": "string", "enum": ["super_admin", "company_admin"] },
+          "company_id": { "type": "string", "format": "uuid", "nullable": true }
+        }
+      },
+      "UpdateUserRequest": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string", "minLength": 1 },
+          "email": { "type": "string", "format": "email" },
+          "role": { "type": "string", "enum": ["super_admin", "company_admin"] },
+          "is_active": { "type": "boolean" }
+        }
+      },
+      "CreateCompanyRequest": {
+        "type": "object",
+        "required": ["name"],
+        "properties": {
+          "name": { "type": "string", "example": "PT Inovasi Teknologi", "minLength": 3, "maxLength": 255 },
+          "npwp": { "type": "string", "example": "1234567890123456", "maxLength": 16 },
+          "nib": { "type": "string", "example": "9123456789012", "maxLength": 25 },
+          "address": { "type": "string", "example": "Jl. Sudirman No. 1, Jakarta" },
+          "email": { "type": "string", "format": "email" },
+          "phone": { "type": "string", "example": "021-12345678", "maxLength": 20 }
+        }
+      },
+      "UpdateCompanyRequest": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string", "minLength": 3, "maxLength": 255 },
+          "npwp": { "type": "string", "maxLength": 16 },
+          "nib": { "type": "string", "maxLength": 25 },
+          "address": { "type": "string" },
+          "email": { "type": "string", "format": "email" },
+          "phone": { "type": "string", "maxLength": 20 }
+        }
+      },
+      "CreateModuleRequest": {
+        "type": "object",
+        "required": ["name", "slug", "version"],
+        "properties": {
+          "name": { "type": "string", "minLength": 3, "maxLength": 255 },
+          "slug": { "type": "string", "minLength": 2, "maxLength": 100, "pattern": "^[a-z0-9-]+$" },
+          "version": { "type": "string", "maxLength": 20, "example": "1.0.0" },
+          "description": { "type": "string" },
+          "is_core": { "type": "boolean", "default": false }
+        }
+      },
+      "UpdateModuleRequest": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string", "minLength": 3, "maxLength": 255 },
+          "version": { "type": "string", "maxLength": 20 },
+          "description": { "type": "string" },
+          "is_core": { "type": "boolean" }
+        }
+      },
+      "ToggleModuleRequest": {
+        "type": "object",
+        "required": ["company_id"],
+        "properties": {
+          "company_id": { "type": "string", "format": "uuid" }
+        }
+      },
+      "CreateLicenseRequest": {
+        "type": "object",
+        "required": ["company_id", "plan_type", "start_date", "end_date"],
+        "properties": {
+          "company_id": { "type": "string", "format": "uuid" },
+          "plan_type": { "type": "string", "enum": ["free", "basic", "pro", "enterprise"] },
+          "max_employees": { "type": "integer", "minimum": 0 },
+          "max_modules": { "type": "integer", "minimum": 0 },
+          "start_date": { "type": "string", "format": "date", "example": "2026-01-01" },
+          "end_date": { "type": "string", "format": "date", "example": "2027-01-01" }
+        }
+      },
+      "UpdateLicenseRequest": {
+        "type": "object",
+        "properties": {
+          "plan_type": { "type": "string", "enum": ["free", "basic", "pro", "enterprise"] },
+          "max_employees": { "type": "integer", "minimum": 0 },
+          "max_modules": { "type": "integer", "minimum": 0 },
+          "start_date": { "type": "string", "format": "date" },
+          "end_date": { "type": "string", "format": "date" },
+          "status": { "type": "string", "enum": ["active", "expired", "suspended", "cancelled"] }
+        }
+      },
+      "CreateOrganizationRequest": {
+        "type": "object",
+        "required": ["code", "nomenclature"],
+        "properties": {
+          "code": { "type": "string", "example": "01", "maxLength": 10 },
+          "nomenclature": { "type": "string", "example": "Direktorat Teknologi Informasi", "maxLength": 255 },
+          "parent_id": { "type": "string", "format": "uuid", "nullable": true },
+          "zone_id": { "type": "string", "format": "uuid", "nullable": true },
+          "job_family_id": { "type": "string", "format": "uuid", "nullable": true },
+          "grading_id": { "type": "string", "format": "uuid", "nullable": true }
+        }
+      },
+      "UpdateOrganizationRequest": {
+        "type": "object",
+        "properties": {
+          "code": { "type": "string", "maxLength": 10 },
+          "nomenclature": { "type": "string", "maxLength": 255 },
+          "parent_id": { "type": "string", "format": "uuid", "nullable": true },
+          "zone_id": { "type": "string", "format": "uuid", "nullable": true },
+          "job_family_id": { "type": "string", "format": "uuid", "nullable": true },
+          "grading_id": { "type": "string", "format": "uuid", "nullable": true }
+        }
+      },
+      "CreateEmployeeRequest": {
+        "type": "object",
+        "required": ["employee_id", "name"],
+        "properties": {
+          "employee_id": { "type": "string", "example": "EMP001", "maxLength": 50 },
+          "nik": { "type": "string", "nullable": true, "maxLength": 16 },
+          "family_id": { "type": "string", "nullable": true, "maxLength": 16 },
+          "name": { "type": "string", "example": "John Doe", "maxLength": 255 },
+          "mother_name": { "type": "string", "nullable": true, "maxLength": 255 },
+          "gender": { "type": "string", "enum": ["M", "F"], "nullable": true },
+          "nationality_type": { "type": "string", "enum": ["WNI", "WNA"], "nullable": true },
+          "nationality_id": { "type": "string", "nullable": true, "maxLength": 2 },
+          "pob": { "type": "string", "nullable": true, "maxLength": 255 },
+          "dob": { "type": "string", "format": "date", "nullable": true },
+          "phone_number": { "type": "string", "nullable": true, "maxLength": 255 },
+          "email": { "type": "string", "format": "email", "nullable": true },
+          "linkedin": { "type": "string", "nullable": true, "maxLength": 255 },
+          "ig": { "type": "string", "nullable": true, "maxLength": 255 },
+          "religion_id": { "type": "string", "format": "uuid", "nullable": true },
+          "marital_status_id": { "type": "string", "format": "uuid", "nullable": true }
+        }
+      },
+      "UpdateEmployeeRequest": {
+        "type": "object",
+        "properties": {
+          "nik": { "type": "string", "nullable": true },
+          "name": { "type": "string", "nullable": true },
+          "gender": { "type": "string", "enum": ["M", "F"], "nullable": true },
+          "pob": { "type": "string", "nullable": true },
+          "dob": { "type": "string", "nullable": true },
+          "phone_number": { "type": "string", "nullable": true },
+          "email": { "type": "string", "format": "email", "nullable": true },
+          "religion_id": { "type": "string", "nullable": true },
+          "marital_status_id": { "type": "string", "nullable": true },
+          "status": { "type": "string", "enum": ["active", "inactive", "suspended"], "nullable": true }
+        }
+      },
+      "EmployeeListResponse": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean" },
+          "data": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/EmployeeResponse" }
+          },
+          "page": { "type": "integer" },
+          "per_page": { "type": "integer" },
+          "total": { "type": "integer" },
+          "total_pages": { "type": "integer" }
+        }
+      },
+      "EmployeeResponse": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "employee_id": { "type": "string" },
+          "nik": { "type": "string" },
+          "name": { "type": "string" },
+          "gender": { "type": "string" },
+          "pob": { "type": "string" },
+          "dob": { "type": "string" },
+          "phone_number": { "type": "string" },
+          "email": { "type": "string" },
+          "religion_id": { "type": "string" },
+          "marital_status_id": { "type": "string" },
+          "status": { "type": "string" },
+          "created_at": { "type": "string", "format": "date-time" },
+          "updated_at": { "type": "string", "format": "date-time" },
+          "addresses": { "type": "array", "items": { "$ref": "#/components/schemas/AddressResponse" } },
+          "emergency_contacts": { "type": "array", "items": { "$ref": "#/components/schemas/EmergencyContactResponse" } },
+          "families": { "type": "array", "items": { "$ref": "#/components/schemas/FamilyResponse" } },
+          "educations": { "type": "array", "items": { "$ref": "#/components/schemas/EducationResponse" } },
+          "experiences": { "type": "array", "items": { "$ref": "#/components/schemas/ExperienceResponse" } },
+          "documents": { "type": "array", "items": { "$ref": "#/components/schemas/DocumentResponse" } },
+          "insurances": { "type": "array", "items": { "$ref": "#/components/schemas/InsuranceResponse" } },
+          "employments": { "type": "array", "items": { "$ref": "#/components/schemas/EmploymentResponse" } }
+        }
+      },
+      "AddressResponse": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "type": { "type": "string" },
+          "address": { "type": "string" },
+          "province_id": { "type": "string" },
+          "regency_id": { "type": "string" },
+          "district_id": { "type": "string" },
+          "village_id": { "type": "string" },
+          "postal_code": { "type": "string" }
+        }
+      },
+      "EmergencyContactResponse": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "name": { "type": "string" },
+          "relationship_type_id": { "type": "string" },
+          "phone_number": { "type": "string" },
+          "address": { "type": "string" }
+        }
+      },
+      "FamilyResponse": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "nik": { "type": "string" },
+          "name": { "type": "string" },
+          "dob": { "type": "string" },
+          "relationship_type_id": { "type": "string" },
+          "education_id": { "type": "string" }
+        }
+      },
+      "EducationResponse": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "education_id": { "type": "string" },
+          "name": { "type": "string" },
+          "major": { "type": "string" },
+          "graduation_year": { "type": "integer" }
+        }
+      },
+      "ExperienceResponse": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "company": { "type": "string" },
+          "position": { "type": "string" },
+          "start_year": { "type": "integer" },
+          "end_year": { "type": "integer" }
+        }
+      },
+      "DocumentResponse": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "name": { "type": "string" },
+          "file": { "type": "string" },
+          "note": { "type": "string" }
+        }
+      },
+      "InsuranceResponse": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "category": { "type": "string" },
+          "number": { "type": "string" },
+          "name": { "type": "string" },
+          "type": { "type": "string" }
+        }
+      },
+      "EmploymentResponse": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "organization_id": { "type": "string" },
+          "position_id": { "type": "string" },
+          "employment_status_id": { "type": "string" },
+          "decision_letter_number": { "type": "string" },
+          "decision_letter_date": { "type": "string" },
+          "effective_date": { "type": "string" },
+          "effective_end_date": { "type": "string" }
+        }
+      },
+      "CreateAddressRequest": {
+        "type": "object",
+        "required": ["type", "address"],
+        "properties": {
+          "type": { "type": "string", "enum": ["MAIN", "DOMICILE"], "description": "Address type (ENUM: MAIN/DOMICILE)" },
+          "address": { "type": "string" },
+          "province_id": { "type": "string", "nullable": true },
+          "regency_id": { "type": "string", "nullable": true },
+          "district_id": { "type": "string", "nullable": true },
+          "village_id": { "type": "string", "nullable": true },
+          "postal_code": { "type": "string", "nullable": true, "maxLength": 5 }
+        }
+      },
+      "UpdateAddressRequest": {
+        "type": "object",
+        "properties": {
+          "type": { "type": "string", "enum": ["MAIN", "DOMICILE"], "nullable": true },
+          "address": { "type": "string", "nullable": true },
+          "province_id": { "type": "string", "nullable": true },
+          "regency_id": { "type": "string", "nullable": true },
+          "district_id": { "type": "string", "nullable": true },
+          "village_id": { "type": "string", "nullable": true },
+          "postal_code": { "type": "string", "nullable": true }
+        }
+      },
+      "CreateEmergencyContactRequest": {
+        "type": "object",
+        "required": ["name", "phone_number"],
+        "properties": {
+          "name": { "type": "string", "maxLength": 255 },
+          "relationship_type_id": { "type": "string", "nullable": true },
+          "phone_number": { "type": "string", "maxLength": 50 },
+          "address": { "type": "string", "nullable": true }
+        }
+      },
+      "UpdateEmergencyContactRequest": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string", "nullable": true },
+          "relationship_type_id": { "type": "string", "nullable": true },
+          "phone_number": { "type": "string", "nullable": true },
+          "address": { "type": "string", "nullable": true }
+        }
+      },
+      "CreateFamilyRequest": {
+        "type": "object",
+        "required": ["name"],
+        "properties": {
+          "nik": { "type": "string", "nullable": true, "maxLength": 16 },
+          "name": { "type": "string", "maxLength": 255 },
+          "dob": { "type": "string", "nullable": true },
+          "relationship_type_id": { "type": "string", "nullable": true },
+          "education_id": { "type": "string", "nullable": true }
+        }
+      },
+      "UpdateFamilyRequest": {
+        "type": "object",
+        "properties": {
+          "nik": { "type": "string", "nullable": true },
+          "name": { "type": "string", "nullable": true },
+          "dob": { "type": "string", "nullable": true },
+          "relationship_type_id": { "type": "string", "nullable": true },
+          "education_id": { "type": "string", "nullable": true }
+        }
+      },
+      "CreateEducationRequest": {
+        "type": "object",
+        "required": ["name"],
+        "properties": {
+          "education_id": { "type": "string", "nullable": true },
+          "name": { "type": "string", "maxLength": 255 },
+          "major": { "type": "string", "nullable": true },
+          "graduation_year": { "type": "integer", "nullable": true }
+        }
+      },
+      "UpdateEducationRequest": {
+        "type": "object",
+        "properties": {
+          "education_id": { "type": "string", "nullable": true },
+          "name": { "type": "string", "nullable": true },
+          "major": { "type": "string", "nullable": true },
+          "graduation_year": { "type": "integer", "nullable": true }
+        }
+      },
+      "CreateExperienceRequest": {
+        "type": "object",
+        "required": ["company"],
+        "properties": {
+          "company": { "type": "string", "maxLength": 255 },
+          "position": { "type": "string", "nullable": true },
+          "start_year": { "type": "integer", "nullable": true },
+          "end_year": { "type": "integer", "nullable": true }
+        }
+      },
+      "UpdateExperienceRequest": {
+        "type": "object",
+        "properties": {
+          "company": { "type": "string", "nullable": true },
+          "position": { "type": "string", "nullable": true },
+          "start_year": { "type": "integer", "nullable": true },
+          "end_year": { "type": "integer", "nullable": true }
+        }
+      },
+      "CreateDocumentRequest": {
+        "type": "object",
+        "required": ["name", "file"],
+        "properties": {
+          "name": { "type": "string", "maxLength": 255 },
+          "file": { "type": "string", "maxLength": 255 },
+          "note": { "type": "string", "nullable": true }
+        }
+      },
+      "UpdateDocumentRequest": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string", "nullable": true },
+          "file": { "type": "string", "nullable": true },
+          "note": { "type": "string", "nullable": true }
+        }
+      },
+      "CreateInsuranceRequest": {
+        "type": "object",
+        "required": ["number", "name"],
+        "properties": {
+          "category": { "type": "string", "enum": ["BPJS", "Non BPJS"], "nullable": true },
+          "number": { "type": "string", "maxLength": 100 },
+          "name": { "type": "string", "maxLength": 100 },
+          "type": { "type": "string", "nullable": true }
+        }
+      },
+      "UpdateInsuranceRequest": {
+        "type": "object",
+        "properties": {
+          "category": { "type": "string", "enum": ["BPJS", "Non BPJS"], "nullable": true },
+          "number": { "type": "string", "nullable": true },
+          "name": { "type": "string", "nullable": true },
+          "type": { "type": "string", "nullable": true }
+        }
+      },
+      "CreateEmploymentRequest": {
+        "type": "object",
+        "required": ["decision_letter_number", "decision_letter_date", "effective_date"],
+        "properties": {
+          "organization_id": { "type": "string", "nullable": true },
+          "position_id": { "type": "string", "nullable": true },
+          "employment_status_id": { "type": "string", "nullable": true },
+          "decision_letter_number": { "type": "string", "maxLength": 50 },
+          "decision_letter_date": { "type": "string", "format": "date" },
+          "effective_date": { "type": "string", "format": "date" },
+          "effective_end_date": { "type": "string", "format": "date", "nullable": true }
+        }
+      },
+      "UpdateEmploymentRequest": {
+        "type": "object",
+        "properties": {
+          "organization_id": { "type": "string", "nullable": true },
+          "position_id": { "type": "string", "nullable": true },
+          "employment_status_id": { "type": "string", "nullable": true },
+          "decision_letter_number": { "type": "string", "nullable": true },
+          "decision_letter_date": { "type": "string", "nullable": true },
+          "effective_date": { "type": "string", "nullable": true },
+          "effective_end_date": { "type": "string", "nullable": true }
+        }
+      }
+    }
+  }
+}

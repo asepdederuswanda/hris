@@ -1,0 +1,125 @@
+# HRIS Platform - Docker Compose Development Environment
+#
+# Services:
+#   - postgres: Platform & tenant database
+#   - redis: Cache & async job queue
+#   - api: Go API server
+#   - asynqmon: Asynq monitoring UI
+#   - otel-collector: OpenTelemetry collector (optional)
+
+version: '3.8'
+
+networks:
+  hris-network:
+    driver: bridge
+
+volumes:
+  pgdata:
+  redisdata:
+
+services:
+  # ===================================================================
+  # PostgreSQL Database
+  # ===================================================================
+  postgres:
+    image: postgres:16-alpine
+    container_name: hris-postgres
+    restart: unless-stopped
+    networks:
+      - hris-network
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: hris_platform
+      POSTGRES_USER: hris
+      POSTGRES_PASSWORD: hris_secret
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hris -d hris_platform"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ===================================================================
+  # Redis Cache & Queue
+  # ===================================================================
+  redis:
+    image: redis:7-alpine
+    container_name: hris-redis
+    restart: unless-stopped
+    networks:
+      - hris-network
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ===================================================================
+  # Go API Server
+  # ===================================================================
+  api:
+    build:
+      context: ../backend
+      dockerfile: docker/Dockerfile
+    container_name: hris-api
+    restart: unless-stopped
+    networks:
+      - hris-network
+    ports:
+      - "8080:8080"
+    environment:
+      HRIS_DATABASE_PLATFORM_HOST: postgres
+      HRIS_DATABASE_PLATFORM_PORT: 5432
+      HRIS_DATABASE_PLATFORM_DB: hris_platform
+      HRIS_DATABASE_PLATFORM_USER: hris
+      HRIS_DATABASE_PLATFORM_PASSWORD: hris_secret
+      HRIS_REDIS_HOST: redis
+      HRIS_REDIS_PORT: 6379
+      HRIS_SERVER_MODE: debug
+      HRIS_JWT_SECRET: dev-secret-change-in-production
+      HRIS_OTEL_ENABLED: "false"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # ===================================================================
+  # Asynq Monitoring UI
+  # ===================================================================
+  asynqmon:
+    image: hibiken/asynqmon:latest
+    container_name: hris-asynqmon
+    restart: unless-stopped
+    networks:
+      - hris-network
+    ports:
+      - "8081:8080"
+    environment:
+      REDIS_ADDR: redis:6379
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  # ===================================================================
+  # OpenTelemetry Collector (optional - uncomment to enable)
+  # ===================================================================
+  # otel-collector:
+  #   image: otel/opentelemetry-collector-contrib:latest
+  #   container_name: hris-otel
+  #   restart: unless-stopped
+  #   networks:
+  #     - hris-network
+  #   ports:
+  #     - "4317:4317"   # gRPC
+  #     - "4318:4318"   # HTTP
+  #     - "8888:8888"   # Prometheus metrics
+  #   volumes:
+  #     - ./otel-collector.yaml:/etc/otelcol-contrib/config.yaml

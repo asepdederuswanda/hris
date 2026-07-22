@@ -1,0 +1,45 @@
+# =============================================================================
+# HRIS Platform — Root .gitignore
+# =============================================================================
+
+# === Build Artifacts ===
+backend/bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# === Test Artifacts ===
+backend/coverage.out
+backend/coverage.html
+backend/test-output.log
+*.test
+*.test.exe
+
+# === IDE / Editor ===
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# === Environment ===
+.env
+backend/.env
+*.log
+
+# === Go ===
+vendor/
+
+# === Docker ===
+backend/docker/.dockerignore
+
+# === Miscellaneous ===
+tmp/
+temp/
+
+#
+inthros-web
