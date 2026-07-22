@@ -34,6 +34,7 @@ import (
 
 	// Tenant modules
 	"github.com/inthros/hris-platform/internal/modules/employee"
+	"github.com/inthros/hris-platform/internal/modules/jobmanagement"
 	"github.com/inthros/hris-platform/internal/modules/organization"
 )
 
@@ -143,6 +144,11 @@ func main() {
 			Module:   employee.NewModule(dbManager, l),
 			TargetDB: module.TargetTenant,
 			Priority: 2,
+		},
+		module.ModuleRegistration{
+			Module:   jobmanagement.NewModule(dbManager, l),
+			TargetDB: module.TargetTenant,
+			Priority: 3,
 		},
 	)
 

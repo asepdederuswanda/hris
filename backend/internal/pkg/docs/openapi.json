@@ -51,6 +51,10 @@
     {
       "name": "Tenant: Employees",
       "description": "Employee management with 8 sub-modules (addresses, emergency contacts, families, educations, experiences, documents, insurances, employments)"
+    },
+    {
+      "name": "Tenant: Job Management",
+      "description": "Job analysis management including titles, values, objectives, responsibilities, competencies, and scoring"
     }
   ],
   "paths": {
@@ -1222,6 +1226,635 @@
           }
         }
       }
+    },
+    "/api/v1/tenant/job-management/titles": {
+      "get": {
+        "tags": ["Tenant: Job Management"],
+        "summary": "List job titles with pagination",
+        "operationId": "listJobTitles",
+        "parameters": [
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
+          { "name": "per_page", "in": "query", "schema": { "type": "integer", "default": 20 } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "responses": { "200": { "description": "Paginated list of job titles" } }
+      },
+      "post": {
+        "tags": ["Tenant: Job Management"],
+        "summary": "Create a new job title",
+        "operationId": "createJobTitle",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreateJobTitleRequest" }
+            }
+          }
+        },
+        "responses": { "201": { "description": "Job title created" }, "400": { "description": "Validation error" } }
+      }
+    },
+    "/api/v1/tenant/job-management/titles/{id}": {
+      "get": {
+        "tags": ["Tenant: Job Management"],
+        "summary": "Get job title by ID with subs",
+        "operationId": "getJobTitle",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "responses": { "200": { "description": "Job title details" }, "404": { "description": "Not found" } }
+      },
+      "put": {
+        "tags": ["Tenant: Job Management"],
+        "summary": "Update job title",
+        "operationId": "updateJobTitle",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/UpdateJobTitleRequest" }
+            }
+          }
+        },
+        "responses": { "200": { "description": "Job title updated" } }
+      },
+      "delete": {
+        "tags": ["Tenant: Job Management"],
+        "summary": "Delete job title",
+        "operationId": "deleteJobTitle",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "responses": { "200": { "description": "Job title deleted" } }
+      }
+    },
+    "/api/v1/tenant/job-management/titles/{titleId}/subs": {
+      "get": {
+        "tags": ["Tenant: Job Management"],
+        "summary": "List subs under a job title",
+        "operationId": "listJobTitleSubs",
+        "parameters": [
+          { "name": "titleId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "responses": { "200": { "description": "List of job title subs" } }
+      },
+      "post": {
+        "tags": ["Tenant: Job Management"],
+        "summary": "Create a sub under a job title",
+        "operationId": "createJobTitleSub",
+        "parameters": [
+          { "name": "titleId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreateJobTitleSubRequest" }
+            }
+          }
+        },
+        "responses": { "201": { "description": "Job title sub created" } }
+      }
+    },
+    "/api/v1/tenant/job-management/titles/{titleId}/subs/{subId}": {
+      "get": {
+        "tags": ["Tenant: Job Management"],
+        "summary": "Get job title sub by ID",
+        "operationId": "getJobTitleSub",
+        "parameters": [
+          { "name": "titleId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
+          { "name": "subId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "responses": { "200": { "description": "Job title sub details" }, "404": { "description": "Not found" } }
+      },
+      "put": {
+        "tags": ["Tenant: Job Management"],
+        "summary": "Update job title sub",
+        "operationId": "updateJobTitleSub",
+        "parameters": [
+          { "name": "titleId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
+          { "name": "subId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/UpdateJobTitleSubRequest" }
+            }
+          }
+        },
+        "responses": { "200": { "description": "Job title sub updated" } }
+      },
+      "delete": {
+        "tags": ["Tenant: Job Management"],
+        "summary": "Delete job title sub",
+        "operationId": "deleteJobTitleSub",
+        "parameters": [
+          { "name": "titleId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
+          { "name": "subId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "responses": { "200": { "description": "Job title sub deleted" } }
+      }
+    },
+    "/api/v1/tenant/job-management/values": {
+      "get": {
+        "tags": ["Tenant: Job Management"],
+        "summary": "List job values with pagination",
+        "operationId": "listJobValues",
+        "parameters": [
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
+          { "name": "per_page", "in": "query", "schema": { "type": "integer", "default": 20 } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "responses": { "200": { "description": "Paginated list of job values" } }
+      },
+      "post": {
+        "tags": ["Tenant: Job Management"],
+        "summary": "Create a new job value",
+        "operationId": "createJobValue",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreateJobValueRequest" }
+            }
+          }
+        },
+        "responses": { "201": { "description": "Job value created" } }
+      }
+    },
+    "/api/v1/tenant/job-management/values/{id}": {
+      "get": {
+        "tags": ["Tenant: Job Management"],
+        "summary": "Get job value by ID",
+        "operationId": "getJobValue",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "responses": { "200": { "description": "Job value details" }, "404": { "description": "Not found" } }
+      },
+      "put": {
+        "tags": ["Tenant: Job Management"],
+        "summary": "Update job value",
+        "operationId": "updateJobValue",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/UpdateJobValueRequest" }
+            }
+          }
+        },
+        "responses": { "200": { "description": "Job value updated" } }
+      },
+      "delete": {
+        "tags": ["Tenant: Job Management"],
+        "summary": "Delete job value",
+        "operationId": "deleteJobValue",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "responses": { "200": { "description": "Job value deleted" } }
+      }
+    },
+    "/api/v1/tenant/job-management/objectives": {
+      "get": {
+        "tags": ["Tenant: Job Management"],
+        "summary": "List job objectives with pagination",
+        "operationId": "listJobObjectives",
+        "parameters": [
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
+          { "name": "per_page", "in": "query", "schema": { "type": "integer", "default": 20 } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "responses": { "200": { "description": "Paginated list of job objectives" } }
+      },
+      "post": {
+        "tags": ["Tenant: Job Management"],
+        "summary": "Create a new job objective",
+        "operationId": "createJobObjective",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreateJobObjectiveRequest" }
+            }
+          }
+        },
+        "responses": { "201": { "description": "Job objective created" } }
+      }
+    },
+    "/api/v1/tenant/job-management/objectives/{id}": {
+      "get": {
+        "tags": ["Tenant: Job Management"],
+        "summary": "Get job objective by ID",
+        "operationId": "getJobObjective",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "responses": { "200": { "description": "Job objective details" }, "404": { "description": "Not found" } }
+      },
+      "put": {
+        "tags": ["Tenant: Job Management"],
+        "summary": "Update job objective",
+        "operationId": "updateJobObjective",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/UpdateJobObjectiveRequest" }
+            }
+          }
+        },
+        "responses": { "200": { "description": "Job objective updated" } }
+      },
+      "delete": {
+        "tags": ["Tenant: Job Management"],
+        "summary": "Delete job objective",
+        "operationId": "deleteJobObjective",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "responses": { "200": { "description": "Job objective deleted" } }
+      }
+    },
+    "/api/v1/tenant/job-management/identifications": {
+      "get": {
+        "tags": ["Tenant: Job Management"],
+        "summary": "List job identifications with pagination",
+        "operationId": "listJobIdentifications",
+        "parameters": [
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
+          { "name": "per_page", "in": "query", "schema": { "type": "integer", "default": 20 } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "responses": { "200": { "description": "Paginated list of job identifications" } }
+      },
+      "post": {
+        "tags": ["Tenant: Job Management"],
+        "summary": "Create a new job identification",
+        "operationId": "createJobIdentification",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreateJobIdentificationRequest" }
+            }
+          }
+        },
+        "responses": { "201": { "description": "Job identification created" } }
+      }
+    },
+    "/api/v1/tenant/job-management/identifications/{id}": {
+      "get": {
+        "tags": ["Tenant: Job Management"],
+        "summary": "Get job identification by ID",
+        "operationId": "getJobIdentification",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "responses": { "200": { "description": "Job identification details" }, "404": { "description": "Not found" } }
+      },
+      "put": {
+        "tags": ["Tenant: Job Management"],
+        "summary": "Update job identification",
+        "operationId": "updateJobIdentification",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/UpdateJobIdentificationRequest" }
+            }
+          }
+        },
+        "responses": { "200": { "description": "Job identification updated" } }
+      },
+      "delete": {
+        "tags": ["Tenant: Job Management"],
+        "summary": "Delete job identification",
+        "operationId": "deleteJobIdentification",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "responses": { "200": { "description": "Job identification deleted" } }
+      }
+    },
+    "/api/v1/tenant/job-management/responsibilities": {
+      "get": {
+        "tags": ["Tenant: Job Management"],
+        "summary": "List job responsibilities with pagination",
+        "operationId": "listJobResponsibilities",
+        "parameters": [
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
+          { "name": "per_page", "in": "query", "schema": { "type": "integer", "default": 20 } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "responses": { "200": { "description": "Paginated list of job responsibilities" } }
+      },
+      "post": {
+        "tags": ["Tenant: Job Management"],
+        "summary": "Create a new job responsibility",
+        "operationId": "createJobResponsibility",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreateJobResponsibilityRequest" }
+            }
+          }
+        },
+        "responses": { "201": { "description": "Job responsibility created" } }
+      }
+    },
+    "/api/v1/tenant/job-management/responsibilities/{id}": {
+      "get": {
+        "tags": ["Tenant: Job Management"],
+        "summary": "Get job responsibility by ID",
+        "operationId": "getJobResponsibility",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "responses": { "200": { "description": "Job responsibility details" }, "404": { "description": "Not found" } }
+      },
+      "put": {
+        "tags": ["Tenant: Job Management"],
+        "summary": "Update job responsibility",
+        "operationId": "updateJobResponsibility",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/UpdateJobResponsibilityRequest" }
+            }
+          }
+        },
+        "responses": { "200": { "description": "Job responsibility updated" } }
+      },
+      "delete": {
+        "tags": ["Tenant: Job Management"],
+        "summary": "Delete job responsibility",
+        "operationId": "deleteJobResponsibility",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "responses": { "200": { "description": "Job responsibility deleted" } }
+      }
+    },
+    "/api/v1/tenant/job-management/education-experiences": {
+      "get": {
+        "tags": ["Tenant: Job Management"],
+        "summary": "List job education experiences with pagination",
+        "operationId": "listJobEducationExperiences",
+        "parameters": [
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
+          { "name": "per_page", "in": "query", "schema": { "type": "integer", "default": 20 } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "responses": { "200": { "description": "Paginated list of job education experiences" } }
+      },
+      "post": {
+        "tags": ["Tenant: Job Management"],
+        "summary": "Create job education experience",
+        "operationId": "createJobEducationExperience",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreateJobEducationExperienceRequest" }
+            }
+          }
+        },
+        "responses": { "201": { "description": "Job education experience created" } }
+      }
+    },
+    "/api/v1/tenant/job-management/education-experiences/{id}": {
+      "get": { "tags": ["Tenant: Job Management"], "summary": "Get job education experience by ID", "operationId": "getJobEducationExperience", "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }], "security": [{ "bearerAuth": [] }], "responses": { "200": { "description": "Job education experience details" }, "404": { "description": "Not found" } } },
+      "put": { "tags": ["Tenant: Job Management"], "summary": "Update job education experience", "operationId": "updateJobEducationExperience", "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }], "security": [{ "bearerAuth": [] }], "requestBody": { "content": { "application/json": { "schema": { "$ref": "#/components/schemas/UpdateJobEducationExperienceRequest" } } } }, "responses": { "200": { "description": "Job education experience updated" } } },
+      "delete": { "tags": ["Tenant: Job Management"], "summary": "Delete job education experience", "operationId": "deleteJobEducationExperience", "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }], "security": [{ "bearerAuth": [] }], "responses": { "200": { "description": "Job education experience deleted" } } }
+    },
+    "/api/v1/tenant/job-management/hr-authorities": {
+      "get": { "tags": ["Tenant: Job Management"], "summary": "List HR authorities with pagination", "operationId": "listJobHRAuthorities", "parameters": [{ "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } }, { "name": "per_page", "in": "query", "schema": { "type": "integer", "default": 20 } }], "security": [{ "bearerAuth": [] }], "responses": { "200": { "description": "Paginated list of HR authorities" } } },
+      "post": { "tags": ["Tenant: Job Management"], "summary": "Create HR authority", "operationId": "createJobHRAuthority", "security": [{ "bearerAuth": [] }], "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CreateJobHRAuthorityRequest" } } } }, "responses": { "201": { "description": "HR authority created" } } }
+    },
+    "/api/v1/tenant/job-management/hr-authorities/{id}": {
+      "get": { "tags": ["Tenant: Job Management"], "summary": "Get HR authority by ID", "operationId": "getJobHRAuthority", "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }], "security": [{ "bearerAuth": [] }], "responses": { "200": { "description": "HR authority details" }, "404": { "description": "Not found" } } },
+      "put": { "tags": ["Tenant: Job Management"], "summary": "Update HR authority", "operationId": "updateJobHRAuthority", "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }], "security": [{ "bearerAuth": [] }], "requestBody": { "content": { "application/json": { "schema": { "$ref": "#/components/schemas/UpdateJobHRAuthorityRequest" } } } }, "responses": { "200": { "description": "HR authority updated" } } },
+      "delete": { "tags": ["Tenant: Job Management"], "summary": "Delete HR authority", "operationId": "deleteJobHRAuthority", "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }], "security": [{ "bearerAuth": [] }], "responses": { "200": { "description": "HR authority deleted" } } }
+    },
+    "/api/v1/tenant/job-management/operational-authorities": {
+      "get": { "tags": ["Tenant: Job Management"], "summary": "List operational authorities with pagination", "operationId": "listJobOperationalAuthorities", "parameters": [{ "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } }, { "name": "per_page", "in": "query", "schema": { "type": "integer", "default": 20 } }], "security": [{ "bearerAuth": [] }], "responses": { "200": { "description": "Paginated list of operational authorities" } } },
+      "post": { "tags": ["Tenant: Job Management"], "summary": "Create operational authority", "operationId": "createJobOperationalAuthority", "security": [{ "bearerAuth": [] }], "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CreateJobOperationalAuthorityRequest" } } } }, "responses": { "201": { "description": "Operational authority created" } } }
+    },
+    "/api/v1/tenant/job-management/operational-authorities/{id}": {
+      "get": { "tags": ["Tenant: Job Management"], "summary": "Get operational authority by ID", "operationId": "getJobOperationalAuthority", "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }], "security": [{ "bearerAuth": [] }], "responses": { "200": { "description": "Operational authority details" }, "404": { "description": "Not found" } } },
+      "put": { "tags": ["Tenant: Job Management"], "summary": "Update operational authority", "operationId": "updateJobOperationalAuthority", "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }], "security": [{ "bearerAuth": [] }], "requestBody": { "content": { "application/json": { "schema": { "$ref": "#/components/schemas/UpdateJobOperationalAuthorityRequest" } } } }, "responses": { "200": { "description": "Operational authority updated" } } },
+      "delete": { "tags": ["Tenant: Job Management"], "summary": "Delete operational authority", "operationId": "deleteJobOperationalAuthority", "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }], "security": [{ "bearerAuth": [] }], "responses": { "200": { "description": "Operational authority deleted" } } }
+    },
+    "/api/v1/tenant/job-management/working-activities": {
+      "get": { "tags": ["Tenant: Job Management"], "summary": "List working activities with pagination", "operationId": "listJobWorkingActivities", "parameters": [{ "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } }, { "name": "per_page", "in": "query", "schema": { "type": "integer", "default": 20 } }], "security": [{ "bearerAuth": [] }], "responses": { "200": { "description": "Paginated list of working activities" } } },
+      "post": { "tags": ["Tenant: Job Management"], "summary": "Create working activity", "operationId": "createJobWorkingActivity", "security": [{ "bearerAuth": [] }], "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CreateJobWorkingActivityRequest" } } } }, "responses": { "201": { "description": "Working activity created" } } }
+    },
+    "/api/v1/tenant/job-management/working-activities/{id}": {
+      "get": { "tags": ["Tenant: Job Management"], "summary": "Get working activity by ID", "operationId": "getJobWorkingActivity", "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }], "security": [{ "bearerAuth": [] }], "responses": { "200": { "description": "Working activity details" }, "404": { "description": "Not found" } } },
+      "put": { "tags": ["Tenant: Job Management"], "summary": "Update working activity", "operationId": "updateJobWorkingActivity", "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }], "security": [{ "bearerAuth": [] }], "requestBody": { "content": { "application/json": { "schema": { "$ref": "#/components/schemas/UpdateJobWorkingActivityRequest" } } } }, "responses": { "200": { "description": "Working activity updated" } } },
+      "delete": { "tags": ["Tenant: Job Management"], "summary": "Delete working activity", "operationId": "deleteJobWorkingActivity", "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }], "security": [{ "bearerAuth": [] }], "responses": { "200": { "description": "Working activity deleted" } } }
+    },
+    "/api/v1/tenant/job-management/working-risks": {
+      "get": { "tags": ["Tenant: Job Management"], "summary": "List working risks with pagination", "operationId": "listJobWorkingRisks", "parameters": [{ "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } }, { "name": "per_page", "in": "query", "schema": { "type": "integer", "default": 20 } }], "security": [{ "bearerAuth": [] }], "responses": { "200": { "description": "Paginated list of working risks" } } },
+      "post": { "tags": ["Tenant: Job Management"], "summary": "Create working risk", "operationId": "createJobWorkingRisk", "security": [{ "bearerAuth": [] }], "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CreateJobWorkingRiskRequest" } } } }, "responses": { "201": { "description": "Working risk created" } } }
+    },
+    "/api/v1/tenant/job-management/working-risks/{id}": {
+      "get": { "tags": ["Tenant: Job Management"], "summary": "Get working risk by ID", "operationId": "getJobWorkingRisk", "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }], "security": [{ "bearerAuth": [] }], "responses": { "200": { "description": "Working risk details" }, "404": { "description": "Not found" } } },
+      "put": { "tags": ["Tenant: Job Management"], "summary": "Update working risk", "operationId": "updateJobWorkingRisk", "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }], "security": [{ "bearerAuth": [] }], "requestBody": { "content": { "application/json": { "schema": { "$ref": "#/components/schemas/UpdateJobWorkingRiskRequest" } } } }, "responses": { "200": { "description": "Working risk updated" } } },
+      "delete": { "tags": ["Tenant: Job Management"], "summary": "Delete working risk", "operationId": "deleteJobWorkingRisk", "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }], "security": [{ "bearerAuth": [] }], "responses": { "200": { "description": "Working risk deleted" } } }
+    },
+    "/api/v1/tenant/job-management/relationships": {
+      "get": { "tags": ["Tenant: Job Management"], "summary": "List relationships with pagination", "operationId": "listJobRelationships", "parameters": [{ "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } }, { "name": "per_page", "in": "query", "schema": { "type": "integer", "default": 20 } }], "security": [{ "bearerAuth": [] }], "responses": { "200": { "description": "Paginated list of relationships" } } },
+      "post": { "tags": ["Tenant: Job Management"], "summary": "Create job relationship", "operationId": "createJobRelationship", "security": [{ "bearerAuth": [] }], "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CreateJobRelationshipRequest" } } } }, "responses": { "201": { "description": "Job relationship created" } } }
+    },
+    "/api/v1/tenant/job-management/relationships/{id}": {
+      "get": { "tags": ["Tenant: Job Management"], "summary": "Get relationship by ID", "operationId": "getJobRelationship", "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }], "security": [{ "bearerAuth": [] }], "responses": { "200": { "description": "Relationship details" }, "404": { "description": "Not found" } } },
+      "put": { "tags": ["Tenant: Job Management"], "summary": "Update relationship", "operationId": "updateJobRelationship", "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }], "security": [{ "bearerAuth": [] }], "requestBody": { "content": { "application/json": { "schema": { "$ref": "#/components/schemas/UpdateJobRelationshipRequest" } } } }, "responses": { "200": { "description": "Relationship updated" } } },
+      "delete": { "tags": ["Tenant: Job Management"], "summary": "Delete relationship", "operationId": "deleteJobRelationship", "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }], "security": [{ "bearerAuth": [] }], "responses": { "200": { "description": "Relationship deleted" } } }
+    },
+    "/api/v1/tenant/job-management/subordinate-controls": {
+      "get": { "tags": ["Tenant: Job Management"], "summary": "List subordinate controls with pagination", "operationId": "listJobSubordinateControls", "parameters": [{ "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } }, { "name": "per_page", "in": "query", "schema": { "type": "integer", "default": 20 } }], "security": [{ "bearerAuth": [] }], "responses": { "200": { "description": "Paginated list of subordinate controls" } } },
+      "post": { "tags": ["Tenant: Job Management"], "summary": "Create subordinate control", "operationId": "createJobSubordinateControl", "security": [{ "bearerAuth": [] }], "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CreateJobSubordinateControlRequest" } } } }, "responses": { "201": { "description": "Subordinate control created" } } }
+    },
+    "/api/v1/tenant/job-management/subordinate-controls/{id}": {
+      "get": { "tags": ["Tenant: Job Management"], "summary": "Get subordinate control by ID", "operationId": "getJobSubordinateControl", "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }], "security": [{ "bearerAuth": [] }], "responses": { "200": { "description": "Subordinate control details" }, "404": { "description": "Not found" } } },
+      "put": { "tags": ["Tenant: Job Management"], "summary": "Update subordinate control", "operationId": "updateJobSubordinateControl", "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }], "security": [{ "bearerAuth": [] }], "requestBody": { "content": { "application/json": { "schema": { "$ref": "#/components/schemas/UpdateJobSubordinateControlRequest" } } } }, "responses": { "200": { "description": "Subordinate control updated" } } },
+      "delete": { "tags": ["Tenant: Job Management"], "summary": "Delete subordinate control", "operationId": "deleteJobSubordinateControl", "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }], "security": [{ "bearerAuth": [] }], "responses": { "200": { "description": "Subordinate control deleted" } } }
+    },
+    "/api/v1/tenant/job-management/assets": {
+      "get": { "tags": ["Tenant: Job Management"], "summary": "List job assets with pagination", "operationId": "listJobAssets", "parameters": [{ "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } }, { "name": "per_page", "in": "query", "schema": { "type": "integer", "default": 20 } }], "security": [{ "bearerAuth": [] }], "responses": { "200": { "description": "Paginated list of job assets" } } },
+      "post": { "tags": ["Tenant: Job Management"], "summary": "Create job asset", "operationId": "createJobAsset", "security": [{ "bearerAuth": [] }], "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CreateJobAssetRequest" } } } }, "responses": { "201": { "description": "Job asset created" } } }
+    },
+    "/api/v1/tenant/job-management/assets/{id}": {
+      "get": { "tags": ["Tenant: Job Management"], "summary": "Get job asset by ID", "operationId": "getJobAsset", "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }], "security": [{ "bearerAuth": [] }], "responses": { "200": { "description": "Job asset details" }, "404": { "description": "Not found" } } },
+      "put": { "tags": ["Tenant: Job Management"], "summary": "Update job asset", "operationId": "updateJobAsset", "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }], "security": [{ "bearerAuth": [] }], "requestBody": { "content": { "application/json": { "schema": { "$ref": "#/components/schemas/UpdateJobAssetRequest" } } } }, "responses": { "200": { "description": "Job asset updated" } } },
+      "delete": { "tags": ["Tenant: Job Management"], "summary": "Delete job asset", "operationId": "deleteJobAsset", "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }], "security": [{ "bearerAuth": [] }], "responses": { "200": { "description": "Job asset deleted" } } }
+    },
+    "/api/v1/tenant/job-management/financials": {
+      "get": { "tags": ["Tenant: Job Management"], "summary": "List job financials with pagination", "operationId": "listJobFinancials", "parameters": [{ "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } }, { "name": "per_page", "in": "query", "schema": { "type": "integer", "default": 20 } }], "security": [{ "bearerAuth": [] }], "responses": { "200": { "description": "Paginated list of job financials" } } },
+      "post": { "tags": ["Tenant: Job Management"], "summary": "Create job financial", "operationId": "createJobFinancial", "security": [{ "bearerAuth": [] }], "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CreateJobFinancialRequest" } } } }, "responses": { "201": { "description": "Job financial created" } } }
+    },
+    "/api/v1/tenant/job-management/financials/{id}": {
+      "get": { "tags": ["Tenant: Job Management"], "summary": "Get job financial by ID", "operationId": "getJobFinancial", "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }], "security": [{ "bearerAuth": [] }], "responses": { "200": { "description": "Job financial details" }, "404": { "description": "Not found" } } },
+      "put": { "tags": ["Tenant: Job Management"], "summary": "Update job financial", "operationId": "updateJobFinancial", "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }], "security": [{ "bearerAuth": [] }], "requestBody": { "content": { "application/json": { "schema": { "$ref": "#/components/schemas/UpdateJobFinancialRequest" } } } }, "responses": { "200": { "description": "Job financial updated" } } },
+      "delete": { "tags": ["Tenant: Job Management"], "summary": "Delete job financial", "operationId": "deleteJobFinancial", "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }], "security": [{ "bearerAuth": [] }], "responses": { "200": { "description": "Job financial deleted" } } }
+    },
+    "/api/v1/tenant/job-management/potency-competencies": {
+      "get": { "tags": ["Tenant: Job Management"], "summary": "List potency competencies with pagination", "operationId": "listJobPotencyCompetencies", "parameters": [{ "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } }, { "name": "per_page", "in": "query", "schema": { "type": "integer", "default": 20 } }], "security": [{ "bearerAuth": [] }], "responses": { "200": { "description": "Paginated list of potency competencies" } } },
+      "post": { "tags": ["Tenant: Job Management"], "summary": "Create potency competency", "operationId": "createJobPotencyCompetency", "security": [{ "bearerAuth": [] }], "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CreateJobPotencyCompetencyRequest" } } } }, "responses": { "201": { "description": "Potency competency created" } } }
+    },
+    "/api/v1/tenant/job-management/potency-competencies/{id}": {
+      "get": { "tags": ["Tenant: Job Management"], "summary": "Get potency competency by ID", "operationId": "getJobPotencyCompetency", "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }], "security": [{ "bearerAuth": [] }], "responses": { "200": { "description": "Potency competency details" }, "404": { "description": "Not found" } } },
+      "put": { "tags": ["Tenant: Job Management"], "summary": "Update potency competency", "operationId": "updateJobPotencyCompetency", "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }], "security": [{ "bearerAuth": [] }], "requestBody": { "content": { "application/json": { "schema": { "$ref": "#/components/schemas/UpdateJobPotencyCompetencyRequest" } } } }, "responses": { "200": { "description": "Potency competency updated" } } },
+      "delete": { "tags": ["Tenant: Job Management"], "summary": "Delete potency competency", "operationId": "deleteJobPotencyCompetency", "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }], "security": [{ "bearerAuth": [] }], "responses": { "200": { "description": "Potency competency deleted" } } }
+    },
+    "/api/v1/tenant/job-management/scores": {
+      "get": {
+        "tags": ["Tenant: Job Management"],
+        "summary": "List job scores with pagination",
+        "operationId": "listJobScores",
+        "parameters": [
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
+          { "name": "per_page", "in": "query", "schema": { "type": "integer", "default": 20 } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "responses": { "200": { "description": "Paginated list of job scores" } }
+      }
+    },
+    "/api/v1/tenant/job-management/scores/org/{orgId}": {
+      "get": {
+        "tags": ["Tenant: Job Management"],
+        "summary": "Get job score by organization",
+        "operationId": "getJobScoreByOrganization",
+        "parameters": [
+          { "name": "orgId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "responses": { "200": { "description": "Job score details" }, "404": { "description": "Not found" } }
+      },
+      "put": {
+        "tags": ["Tenant: Job Management"],
+        "summary": "Upsert job score for organization",
+        "operationId": "upsertJobScore",
+        "parameters": [
+          { "name": "orgId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/UpdateJobScoreRequest" }
+            }
+          }
+        },
+        "responses": { "200": { "description": "Job score upserted" } }
+      }
+    },
+    "/api/v1/tenant/job-management/competency-groups": {
+      "get": {
+        "tags": ["Tenant: Job Management"],
+        "summary": "List competency groups by organization",
+        "operationId": "listJobCompetencyGroups",
+        "parameters": [
+          { "name": "organization_id", "in": "query", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "responses": { "200": { "description": "List of competency groups" } }
+      },
+      "post": {
+        "tags": ["Tenant: Job Management"],
+        "summary": "Create competency group",
+        "operationId": "createJobCompetencyGroup",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreateJobCompetencyGroupRequest" }
+            }
+          }
+        },
+        "responses": { "201": { "description": "Competency group created" } }
+      }
+    },
+    "/api/v1/tenant/job-management/competency-groups/{id}": {
+      "get": {
+        "tags": ["Tenant: Job Management"],
+        "summary": "Get competency group by ID",
+        "operationId": "getJobCompetencyGroup",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "responses": { "200": { "description": "Competency group details" }, "404": { "description": "Not found" } }
+      },
+      "put": {
+        "tags": ["Tenant: Job Management"],
+        "summary": "Update competency group",
+        "operationId": "updateJobCompetencyGroup",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/UpdateJobCompetencyGroupRequest" }
+            }
+          }
+        },
+        "responses": { "200": { "description": "Competency group updated" } }
+      },
+      "delete": {
+        "tags": ["Tenant: Job Management"],
+        "summary": "Delete competency group",
+        "operationId": "deleteJobCompetencyGroup",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "responses": { "200": { "description": "Competency group deleted" } }
+      }
     }
   },
   "components": {
@@ -1691,6 +2324,343 @@
           "decision_letter_date": { "type": "string", "nullable": true },
           "effective_date": { "type": "string", "nullable": true },
           "effective_end_date": { "type": "string", "nullable": true }
+        }
+      },
+      "CreateJobTitleRequest": {
+        "type": "object",
+        "required": ["name"],
+        "properties": {
+          "name": { "type": "string", "maxLength": 100, "example": "Staff Akuntansi" },
+          "descriptions": { "type": "string" },
+          "status": { "type": "integer", "default": 1 }
+        }
+      },
+      "UpdateJobTitleRequest": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string", "maxLength": 100, "nullable": true },
+          "descriptions": { "type": "string", "nullable": true },
+          "status": { "type": "integer", "nullable": true }
+        }
+      },
+      "CreateJobTitleSubRequest": {
+        "type": "object",
+        "required": ["job_management_title_id", "name"],
+        "properties": {
+          "job_management_title_id": { "type": "string", "format": "uuid", "description": "Parent job title ID" },
+          "name": { "type": "string", "maxLength": 100, "example": "Staff Akuntansi Pajak" },
+          "descriptions": { "type": "string" },
+          "status": { "type": "integer", "default": 1 }
+        }
+      },
+      "UpdateJobTitleSubRequest": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string", "maxLength": 100, "nullable": true },
+          "descriptions": { "type": "string", "nullable": true },
+          "status": { "type": "integer", "nullable": true }
+        }
+      },
+      "CreateJobValueRequest": {
+        "type": "object",
+        "required": ["type"],
+        "properties": {
+          "job_management_title_sub_id": { "type": "string", "format": "uuid", "nullable": true },
+          "type": { "type": "string", "example": "education" },
+          "level": { "type": "integer", "nullable": true },
+          "descriptions": { "type": "string" },
+          "note": { "type": "string" },
+          "sort": { "type": "integer", "nullable": true }
+        }
+      },
+      "UpdateJobValueRequest": {
+        "type": "object",
+        "properties": {
+          "type": { "type": "string", "nullable": true },
+          "level": { "type": "integer", "nullable": true },
+          "descriptions": { "type": "string", "nullable": true },
+          "note": { "type": "string", "nullable": true },
+          "sort": { "type": "integer", "nullable": true }
+        }
+      },
+      "CreateJobObjectiveRequest": {
+        "type": "object",
+        "required": ["organization_id", "nomenclature", "full_code"],
+        "properties": {
+          "organization_id": { "type": "string", "format": "uuid" },
+          "nomenclature": { "type": "string", "maxLength": 50, "example": "Keuangan & Akuntansi" },
+          "full_code": { "type": "string", "maxLength": 20, "example": "FIN-ACC-001" },
+          "objective": { "type": "string" }
+        }
+      },
+      "UpdateJobObjectiveRequest": {
+        "type": "object",
+        "properties": {
+          "nomenclature": { "type": "string", "maxLength": 50, "nullable": true },
+          "full_code": { "type": "string", "maxLength": 20, "nullable": true },
+          "objective": { "type": "string", "nullable": true }
+        }
+      },
+      "CreateJobIdentificationRequest": {
+        "type": "object",
+        "required": ["organization_id", "nomenclature", "full_code", "grading_id"],
+        "properties": {
+          "organization_id": { "type": "string", "format": "uuid" },
+          "nomenclature": { "type": "string", "maxLength": 50 },
+          "full_code": { "type": "string", "maxLength": 20 },
+          "grading_id": { "type": "string", "format": "uuid" }
+        }
+      },
+      "UpdateJobIdentificationRequest": {
+        "type": "object",
+        "properties": {
+          "nomenclature": { "type": "string", "maxLength": 50, "nullable": true },
+          "full_code": { "type": "string", "maxLength": 20, "nullable": true },
+          "grading_id": { "type": "string", "format": "uuid", "nullable": true }
+        }
+      },
+      "CreateJobResponsibilityRequest": {
+        "type": "object",
+        "required": ["organization_id", "nomenclature", "full_code"],
+        "properties": {
+          "organization_id": { "type": "string", "format": "uuid" },
+          "nomenclature": { "type": "string", "maxLength": 50 },
+          "full_code": { "type": "string", "maxLength": 20 },
+          "main_task": { "type": "string" },
+          "activities": { "type": "string" },
+          "outputs": { "type": "string" },
+          "success_indicators": { "type": "string" }
+        }
+      },
+      "UpdateJobResponsibilityRequest": {
+        "type": "object",
+        "properties": {
+          "nomenclature": { "type": "string", "maxLength": 50, "nullable": true },
+          "full_code": { "type": "string", "maxLength": 20, "nullable": true },
+          "main_task": { "type": "string", "nullable": true },
+          "activities": { "type": "string", "nullable": true },
+          "outputs": { "type": "string", "nullable": true },
+          "success_indicators": { "type": "string", "nullable": true }
+        }
+      },
+      "CreateJobEducationExperienceRequest": {
+        "type": "object",
+        "required": ["organization_id", "nomenclature", "full_code"],
+        "properties": {
+          "organization_id": { "type": "string", "format": "uuid" },
+          "nomenclature": { "type": "string", "maxLength": 50 },
+          "full_code": { "type": "string", "maxLength": 20 },
+          "job_management_value_education_id": { "type": "string", "format": "uuid", "nullable": true },
+          "job_management_value_experience_id": { "type": "string", "format": "uuid", "nullable": true }
+        }
+      },
+      "UpdateJobEducationExperienceRequest": {
+        "type": "object",
+        "properties": {
+          "nomenclature": { "type": "string", "maxLength": 50, "nullable": true },
+          "full_code": { "type": "string", "maxLength": 20, "nullable": true },
+          "job_management_value_education_id": { "type": "string", "format": "uuid", "nullable": true },
+          "job_management_value_experience_id": { "type": "string", "format": "uuid", "nullable": true }
+        }
+      },
+      "CreateJobHRAuthorityRequest": {
+        "type": "object",
+        "required": ["organization_id", "nomenclature", "full_code"],
+        "properties": {
+          "organization_id": { "type": "string", "format": "uuid" },
+          "nomenclature": { "type": "string", "maxLength": 50 },
+          "full_code": { "type": "string", "maxLength": 20 },
+          "description": { "type": "string" }
+        }
+      },
+      "UpdateJobHRAuthorityRequest": {
+        "type": "object",
+        "properties": {
+          "nomenclature": { "type": "string", "maxLength": 50, "nullable": true },
+          "full_code": { "type": "string", "maxLength": 20, "nullable": true },
+          "description": { "type": "string", "nullable": true }
+        }
+      },
+      "CreateJobOperationalAuthorityRequest": {
+        "type": "object",
+        "required": ["organization_id", "nomenclature", "full_code"],
+        "properties": {
+          "organization_id": { "type": "string", "format": "uuid" },
+          "nomenclature": { "type": "string", "maxLength": 50 },
+          "full_code": { "type": "string", "maxLength": 20 },
+          "description": { "type": "string" }
+        }
+      },
+      "UpdateJobOperationalAuthorityRequest": {
+        "type": "object",
+        "properties": {
+          "nomenclature": { "type": "string", "maxLength": 50, "nullable": true },
+          "full_code": { "type": "string", "maxLength": 20, "nullable": true },
+          "description": { "type": "string", "nullable": true }
+        }
+      },
+      "CreateJobWorkingActivityRequest": {
+        "type": "object",
+        "required": ["organization_id", "nomenclature", "full_code"],
+        "properties": {
+          "organization_id": { "type": "string", "format": "uuid" },
+          "nomenclature": { "type": "string", "maxLength": 50 },
+          "full_code": { "type": "string", "maxLength": 20 },
+          "job_management_value_id": { "type": "string", "format": "uuid", "nullable": true }
+        }
+      },
+      "UpdateJobWorkingActivityRequest": {
+        "type": "object",
+        "properties": {
+          "nomenclature": { "type": "string", "maxLength": 50, "nullable": true },
+          "full_code": { "type": "string", "maxLength": 20, "nullable": true },
+          "job_management_value_id": { "type": "string", "format": "uuid", "nullable": true }
+        }
+      },
+      "CreateJobWorkingRiskRequest": {
+        "type": "object",
+        "required": ["organization_id", "nomenclature", "full_code"],
+        "properties": {
+          "organization_id": { "type": "string", "format": "uuid" },
+          "nomenclature": { "type": "string", "maxLength": 50 },
+          "full_code": { "type": "string", "maxLength": 20 },
+          "job_management_value_environment_id": { "type": "string", "format": "uuid", "nullable": true },
+          "job_management_value_hazard_id": { "type": "string", "format": "uuid", "nullable": true }
+        }
+      },
+      "UpdateJobWorkingRiskRequest": {
+        "type": "object",
+        "properties": {
+          "nomenclature": { "type": "string", "maxLength": 50, "nullable": true },
+          "full_code": { "type": "string", "maxLength": 20, "nullable": true },
+          "job_management_value_environment_id": { "type": "string", "format": "uuid", "nullable": true },
+          "job_management_value_hazard_id": { "type": "string", "format": "uuid", "nullable": true }
+        }
+      },
+      "CreateJobRelationshipRequest": {
+        "type": "object",
+        "required": ["organization_id", "nomenclature", "full_code"],
+        "properties": {
+          "organization_id": { "type": "string", "format": "uuid" },
+          "nomenclature": { "type": "string", "maxLength": 50 },
+          "full_code": { "type": "string", "maxLength": 20 },
+          "job_management_value_relationship_id": { "type": "string", "format": "uuid", "nullable": true },
+          "job_management_value_frequency_id": { "type": "string", "format": "uuid", "nullable": true }
+        }
+      },
+      "UpdateJobRelationshipRequest": {
+        "type": "object",
+        "properties": {
+          "nomenclature": { "type": "string", "maxLength": 50, "nullable": true },
+          "full_code": { "type": "string", "maxLength": 20, "nullable": true },
+          "job_management_value_relationship_id": { "type": "string", "format": "uuid", "nullable": true },
+          "job_management_value_frequency_id": { "type": "string", "format": "uuid", "nullable": true }
+        }
+      },
+      "CreateJobSubordinateControlRequest": {
+        "type": "object",
+        "required": ["organization_id", "nomenclature", "full_code"],
+        "properties": {
+          "organization_id": { "type": "string", "format": "uuid" },
+          "nomenclature": { "type": "string", "maxLength": 50 },
+          "full_code": { "type": "string", "maxLength": 20 },
+          "job_management_value_id": { "type": "string", "format": "uuid", "nullable": true }
+        }
+      },
+      "UpdateJobSubordinateControlRequest": {
+        "type": "object",
+        "properties": {
+          "nomenclature": { "type": "string", "maxLength": 50, "nullable": true },
+          "full_code": { "type": "string", "maxLength": 20, "nullable": true },
+          "job_management_value_id": { "type": "string", "format": "uuid", "nullable": true }
+        }
+      },
+      "CreateJobAssetRequest": {
+        "type": "object",
+        "required": ["organization_id", "nomenclature", "full_code"],
+        "properties": {
+          "organization_id": { "type": "string", "format": "uuid" },
+          "nomenclature": { "type": "string", "maxLength": 50 },
+          "full_code": { "type": "string", "maxLength": 20 },
+          "job_management_value_asset_id": { "type": "string", "format": "uuid", "nullable": true },
+          "job_management_value_authority_id": { "type": "string", "format": "uuid", "nullable": true }
+        }
+      },
+      "UpdateJobAssetRequest": {
+        "type": "object",
+        "properties": {
+          "nomenclature": { "type": "string", "maxLength": 50, "nullable": true },
+          "full_code": { "type": "string", "maxLength": 20, "nullable": true },
+          "job_management_value_asset_id": { "type": "string", "format": "uuid", "nullable": true },
+          "job_management_value_authority_id": { "type": "string", "format": "uuid", "nullable": true }
+        }
+      },
+      "CreateJobFinancialRequest": {
+        "type": "object",
+        "required": ["organization_id", "nomenclature", "full_code"],
+        "properties": {
+          "organization_id": { "type": "string", "format": "uuid" },
+          "nomenclature": { "type": "string", "maxLength": 50 },
+          "full_code": { "type": "string", "maxLength": 20 },
+          "is_authorized": { "type": "boolean", "default": false },
+          "job_management_value_cash_id": { "type": "string", "format": "uuid", "nullable": true },
+          "job_management_value_authority_id": { "type": "string", "format": "uuid", "nullable": true },
+          "job_management_value_impact_id": { "type": "string", "format": "uuid", "nullable": true }
+        }
+      },
+      "UpdateJobFinancialRequest": {
+        "type": "object",
+        "properties": {
+          "nomenclature": { "type": "string", "maxLength": 50, "nullable": true },
+          "full_code": { "type": "string", "maxLength": 20, "nullable": true },
+          "is_authorized": { "type": "boolean", "nullable": true },
+          "job_management_value_cash_id": { "type": "string", "format": "uuid", "nullable": true },
+          "job_management_value_authority_id": { "type": "string", "format": "uuid", "nullable": true },
+          "job_management_value_impact_id": { "type": "string", "format": "uuid", "nullable": true }
+        }
+      },
+      "CreateJobPotencyCompetencyRequest": {
+        "type": "object",
+        "required": ["organization_id"],
+        "properties": {
+          "organization_id": { "type": "string", "format": "uuid" },
+          "job_management_value_id": { "type": "string", "format": "uuid", "nullable": true },
+          "competency_id": { "type": "string", "format": "uuid", "nullable": true },
+          "weight": { "type": "number", "nullable": true }
+        }
+      },
+      "UpdateJobPotencyCompetencyRequest": {
+        "type": "object",
+        "properties": {
+          "job_management_value_id": { "type": "string", "format": "uuid", "nullable": true },
+          "competency_id": { "type": "string", "format": "uuid", "nullable": true },
+          "weight": { "type": "number", "nullable": true }
+        }
+      },
+      "UpdateJobScoreRequest": {
+        "type": "object",
+        "properties": {
+          "job_value_with_financial": { "type": "integer", "nullable": true },
+          "job_value_without_financial": { "type": "integer", "nullable": true },
+          "has_financial_authority": { "type": "boolean", "nullable": true },
+          "components": { "type": "string", "nullable": true },
+          "sub_component_points": { "type": "string", "nullable": true }
+        }
+      },
+      "CreateJobCompetencyGroupRequest": {
+        "type": "object",
+        "required": ["organization_id", "category", "weight"],
+        "properties": {
+          "organization_id": { "type": "string", "format": "uuid" },
+          "category": { "type": "string", "enum": ["technical", "managerial"], "example": "technical" },
+          "weight": { "type": "number", "example": 75.0 }
+        }
+      },
+      "UpdateJobCompetencyGroupRequest": {
+        "type": "object",
+        "properties": {
+          "category": { "type": "string", "enum": ["technical", "managerial"], "nullable": true },
+          "weight": { "type": "number", "nullable": true }
         }
       }
     }

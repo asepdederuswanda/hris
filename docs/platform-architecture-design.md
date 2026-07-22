@@ -2068,7 +2068,7 @@ gantt
     Auth & Profile Module              :2026-09-01, 14d
     
     section Phase 3: Payroll & Complex
-    Job Management Module              :2026-09-15, 30d
+    Job Management Module              :done, 2026-07-22, 2026-07-22
     Payroll Module (incl. calculator)  :2026-10-01, 45d
     Competency Module                  :2026-10-15, 30d
     

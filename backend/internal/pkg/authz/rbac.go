@@ -114,7 +114,7 @@ func (e *Enforcer) loadDefaultPolicies() {
 		"leave":        "*",
 		"payroll":      "*",
 		"competency":   "*",
-		"job":          "*",
+		"jobmanagement": "*",
 		"approval":     "*",
 	}
 
@@ -262,16 +262,17 @@ func ActionFromMethod(method string) string {
 func singularize(s string) string {
 	// Handle irregular plurals
 	irregular := map[string]string{
-		"companies":     "company",
-		"licenses":      "license",
-		"modules":       "module",
-		"users":         "user",
-		"monitoring":    "monitoring",
-		"tenants":       "tenant",
-		"organizations": "organization",
-		"employees":     "employee",
-		"attendances":   "attendance",
-		"competencies":  "competency",
+		"companies":                  "company",
+		"licenses":                   "license",
+		"modules":                    "module",
+		"users":                      "user",
+		"monitoring":                 "monitoring",
+		"tenants":                    "tenant",
+		"organizations":              "organization",
+		"employees":                  "employee",
+		"attendances":                "attendance",
+		"competencies":               "competency",
+		"job-management": "jobmanagement",
 	}
 	if singular, ok := irregular[s]; ok {
 		return singular

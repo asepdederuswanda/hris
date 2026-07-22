@@ -101,7 +101,8 @@ hris-platform/
 │   │   │   └── company/              #   Company CRUD + TenantConnection
 │   │   ├── modules/                  # Tenant Modules
 │   │   │   ├── organization/         #   Organization tree CRUD
-│   │   │   └── employee/             #   Employee CRUD + 8 sub-modules
+│   │   │   ├── employee/             #   Employee CRUD + 8 sub-modules
+│   │   │   └── jobmanagement/        #   Job Management (18 entities)
 │   │   └── pkg/                      # Shared Kernel
 │   │       ├── config/               # Viper configuration loader
 │   │       ├── database/             # Multi-tenant DB manager
@@ -475,6 +476,162 @@ Authorization: Bearer <access_token>
 | `POST` | `/employees/:id/employments` | Create employment record |
 | `PUT` | `/employees/:id/employments/:employmentId` | Update employment |
 | `DELETE` | `/employees/:id/employments/:employmentId` | Delete employment |
+
+**Job Management — Titles (9.1)**
+| Method | Endpoint | Deskripsi |
+|---|---|---|
+| `GET` | `/job-management/titles` | List job titles |
+| `POST` | `/job-management/titles` | Create job title |
+| `GET` | `/job-management/titles/:id` | Get job title with subs |
+| `PUT` | `/job-management/titles/:id` | Update job title |
+| `DELETE` | `/job-management/titles/:id` | Delete job title |
+| `POST` | `/job-management/titles/:id/subs` | Create job title sub |
+| `GET` | `/job-management/titles/:id/subs` | List subs under a title |
+| `GET` | `/job-management/titles/:id/subs/:subId` | Get job title sub |
+| `PUT` | `/job-management/titles/:id/subs/:subId` | Update job title sub |
+| `DELETE` | `/job-management/titles/:id/subs/:subId` | Delete job title sub |
+
+**Job Management — Values (9.3)**
+| Method | Endpoint | Deskripsi |
+|---|---|---|
+| `GET` | `/job-management/values` | List job values |
+| `POST` | `/job-management/values` | Create job value |
+| `GET` | `/job-management/values/:id` | Get job value |
+| `PUT` | `/job-management/values/:id` | Update job value |
+| `DELETE` | `/job-management/values/:id` | Delete job value |
+
+**Job Management — Objectives (9.4)**
+| Method | Endpoint | Deskripsi |
+|---|---|---|
+| `GET` | `/job-management/objectives` | List job objectives |
+| `POST` | `/job-management/objectives` | Create job objective |
+| `GET` | `/job-management/objectives/:id` | Get job objective |
+| `PUT` | `/job-management/objectives/:id` | Update job objective |
+| `DELETE` | `/job-management/objectives/:id` | Delete job objective |
+
+**Job Management — Identifications (9.5)**
+| Method | Endpoint | Deskripsi |
+|---|---|---|
+| `GET` | `/job-management/identifications` | List job identifications |
+| `POST` | `/job-management/identifications` | Create job identification |
+| `GET` | `/job-management/identifications/:id` | Get job identification |
+| `PUT` | `/job-management/identifications/:id` | Update job identification |
+| `DELETE` | `/job-management/identifications/:id` | Delete job identification |
+
+**Job Management — Responsibilities (9.6)**
+| Method | Endpoint | Deskripsi |
+|---|---|---|
+| `GET` | `/job-management/responsibilities` | List job responsibilities |
+| `POST` | `/job-management/responsibilities` | Create job responsibility |
+| `GET` | `/job-management/responsibilities/:id` | Get job responsibility |
+| `PUT` | `/job-management/responsibilities/:id` | Update job responsibility |
+| `DELETE` | `/job-management/responsibilities/:id` | Delete job responsibility |
+
+**Job Management — Education Experiences (9.7)**
+| Method | Endpoint | Deskripsi |
+|---|---|---|
+| `GET` | `/job-management/education-experiences` | List education experiences |
+| `POST` | `/job-management/education-experiences` | Create education experience |
+| `GET` | `/job-management/education-experiences/:id` | Get education experience |
+| `PUT` | `/job-management/education-experiences/:id` | Update education experience |
+| `DELETE` | `/job-management/education-experiences/:id` | Delete education experience |
+
+**Job Management — HR Authorities (9.8)**
+| Method | Endpoint | Deskripsi |
+|---|---|---|
+| `GET` | `/job-management/hr-authorities` | List HR authorities |
+| `POST` | `/job-management/hr-authorities` | Create HR authority |
+| `GET` | `/job-management/hr-authorities/:id` | Get HR authority |
+| `PUT` | `/job-management/hr-authorities/:id` | Update HR authority |
+| `DELETE` | `/job-management/hr-authorities/:id` | Delete HR authority |
+
+**Job Management — Operational Authorities (9.9)**
+| Method | Endpoint | Deskripsi |
+|---|---|---|
+| `GET` | `/job-management/operational-authorities` | List operational authorities |
+| `POST` | `/job-management/operational-authorities` | Create operational authority |
+| `GET` | `/job-management/operational-authorities/:id` | Get operational authority |
+| `PUT` | `/job-management/operational-authorities/:id` | Update operational authority |
+| `DELETE` | `/job-management/operational-authorities/:id` | Delete operational authority |
+
+**Job Management — Working Activities (9.10)**
+| Method | Endpoint | Deskripsi |
+|---|---|---|
+| `GET` | `/job-management/working-activities` | List working activities |
+| `POST` | `/job-management/working-activities` | Create working activity |
+| `GET` | `/job-management/working-activities/:id` | Get working activity |
+| `PUT` | `/job-management/working-activities/:id` | Update working activity |
+| `DELETE` | `/job-management/working-activities/:id` | Delete working activity |
+
+**Job Management — Working Risks (9.11)**
+| Method | Endpoint | Deskripsi |
+|---|---|---|
+| `GET` | `/job-management/working-risks` | List working risks |
+| `POST` | `/job-management/working-risks` | Create working risk |
+| `GET` | `/job-management/working-risks/:id` | Get working risk |
+| `PUT` | `/job-management/working-risks/:id` | Update working risk |
+| `DELETE` | `/job-management/working-risks/:id` | Delete working risk |
+
+**Job Management — Relationships (9.12)**
+| Method | Endpoint | Deskripsi |
+|---|---|---|
+| `GET` | `/job-management/relationships` | List job relationships |
+| `POST` | `/job-management/relationships` | Create job relationship |
+| `GET` | `/job-management/relationships/:id` | Get job relationship |
+| `PUT` | `/job-management/relationships/:id` | Update job relationship |
+| `DELETE` | `/job-management/relationships/:id` | Delete job relationship |
+
+**Job Management — Subordinate Controls (9.13)**
+| Method | Endpoint | Deskripsi |
+|---|---|---|
+| `GET` | `/job-management/subordinate-controls` | List subordinate controls |
+| `POST` | `/job-management/subordinate-controls` | Create subordinate control |
+| `GET` | `/job-management/subordinate-controls/:id` | Get subordinate control |
+| `PUT` | `/job-management/subordinate-controls/:id` | Update subordinate control |
+| `DELETE` | `/job-management/subordinate-controls/:id` | Delete subordinate control |
+
+**Job Management — Assets (9.14)**
+| Method | Endpoint | Deskripsi |
+|---|---|---|
+| `GET` | `/job-management/assets` | List job assets |
+| `POST` | `/job-management/assets` | Create job asset |
+| `GET` | `/job-management/assets/:id` | Get job asset |
+| `PUT` | `/job-management/assets/:id` | Update job asset |
+| `DELETE` | `/job-management/assets/:id` | Delete job asset |
+
+**Job Management — Financials (9.15)**
+| Method | Endpoint | Deskripsi |
+|---|---|---|
+| `GET` | `/job-management/financials` | List job financials |
+| `POST` | `/job-management/financials` | Create job financial |
+| `GET` | `/job-management/financials/:id` | Get job financial |
+| `PUT` | `/job-management/financials/:id` | Update job financial |
+| `DELETE` | `/job-management/financials/:id` | Delete job financial |
+
+**Job Management — Potency Competencies (9.16)**
+| Method | Endpoint | Deskripsi |
+|---|---|---|
+| `GET` | `/job-management/potency-competencies` | List potency competencies |
+| `POST` | `/job-management/potency-competencies` | Create potency competency |
+| `GET` | `/job-management/potency-competencies/:id` | Get potency competency |
+| `PUT` | `/job-management/potency-competencies/:id` | Update potency competency |
+| `DELETE` | `/job-management/potency-competencies/:id` | Delete potency competency |
+
+**Job Management — Scores (9.17)**
+| Method | Endpoint | Deskripsi |
+|---|---|---|
+| `GET` | `/job-management/scores` | List all scores |
+| `GET` | `/job-management/scores/org/:orgId` | Get score by organization |
+| `PUT` | `/job-management/scores/org/:orgId` | Upsert score for organization |
+
+**Job Management — Competency Groups (9.18)**
+| Method | Endpoint | Deskripsi |
+|---|---|---|
+| `POST` | `/job-management/competency-groups` | Create competency group |
+| `GET` | `/job-management/competency-groups` | List competency groups |
+| `GET` | `/job-management/competency-groups/:id` | Get competency group |
+| `PUT` | `/job-management/competency-groups/:id` | Update competency group |
+| `DELETE` | `/job-management/competency-groups/:id` | Delete competency group |
 
 ### Response Format
 
@@ -922,7 +1079,7 @@ POST /api/v1/platform/companies
 
 | # | Item | File |
 |---|------|------|
-| ✅ | OpenAPI 3.0 JSON specification (**45+ endpoints**) | `internal/pkg/docs/openapi.json` |
+| ✅ | OpenAPI 3.0 JSON specification (**80+ endpoints**) | `internal/pkg/docs/openapi.json` |
 | ✅ | Scalar UI served at `/docs` (interactive documentation) | `internal/pkg/docs/scalar.go` |
 | ✅ | OpenAPI spec served at `/openapi.json` | `internal/pkg/docs/scalar.go` |
 
@@ -999,6 +1156,21 @@ gorm.io/gorm v1.30.0                      # ORM
 | ✅ | AutoMigrate for 9 models during tenant provisioning | `module.go` |
 | ✅ | End-to-end tested: Create, List, Get, Update, Delete + all sub-modules | API verified |
 
+### 🏛️ Tenant Module — Job Management ✅
+
+| # | Item | Files |
+|---|------|-------|
+| ✅ | Job Management model (18 GORM entities with UUID hooks) | `internal/modules/jobmanagement/model.go` |
+| ✅ | Full CRUD for all 18 entities (Titles, Subs, Values, Objectives, Identifications, Responsibilities, Education Experiences, HR Authorities, Operational Authorities, Working Activities, Working Risks, Relationships, Subordinate Controls, Assets, Financials, Potency Competencies, Scores, Competency Groups) | `handler.go`, `service.go`, `repository.go` |
+| ✅ | Request/Response DTOs with validation for all 18 entities | `dto.go` |
+| ✅ | Paginated List responses for list endpoints | `service.go` |
+| ✅ | Routes registration (36+ endpoints) | `routes.go` |
+| ✅ | Module registration (Module SDK compliance) | `module.go` |
+| ✅ | Context-driven tenant DB resolver | `module.go` |
+| ✅ | SQLite-integrated unit tests (74 tests: 22 repository + 29 service + 11 handler + 3 route + 9 integration) | `*_test.go` |
+| ✅ | OpenAPI 3.0 documentation (35 schemas + 36 endpoints) | `internal/pkg/docs/openapi.json` |
+| ✅ | RBAC permission: `jobmanagement.*` for company_admin | `internal/pkg/authz/rbac.go` |
+
 ### Build Status
 
 ```bash
@@ -1024,7 +1196,7 @@ $ go build ./...  # ✅ Berhasil
 - ✅ Employee Module (full CRUD + 8 sub-modules: addresses, emergency contacts, families, educations, experiences, documents, insurances, employments)
 
 ### Phase 3: Payroll & Complex
-- ⬜ Job Management Module
+- ✅ **Job Management Module** (16+ models, 18 GORM entities, full CRUD + scoring) -- [Selesai 22 Juli 2026]
 - ⬜ Payroll Module (calculator, PPh21, BPJS)
 - ⬜ Competency Module
 
