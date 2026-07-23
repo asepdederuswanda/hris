@@ -1,5 +1,5 @@
 -- Migration: 001_create_companies
--- Database: Platform (MySQL)
+-- Database: Platform (Cross-Dialect)
 -- Tabel untuk menyimpan data perusahaan/tenant
 
 CREATE TABLE IF NOT EXISTS companies (
@@ -15,10 +15,10 @@ CREATE TABLE IF NOT EXISTS companies (
     created_by  CHAR(36) NULL,
     updated_by  CHAR(36) NULL,
     created_at  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    deleted_at  TIMESTAMP NULL,
+    updated_at  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted_at  TIMESTAMP NULL
+);
 
-    INDEX idx_companies_slug (slug),
-    INDEX idx_companies_status (status),
-    INDEX idx_companies_deleted_at (deleted_at)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+CREATE INDEX idx_companies_slug ON companies (slug);
+CREATE INDEX idx_companies_status ON companies (status);
+CREATE INDEX idx_companies_deleted_at ON companies (deleted_at);

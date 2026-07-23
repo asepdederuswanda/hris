@@ -37,7 +37,6 @@ const ScalarHTML = `<!doctype html>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <style>
         body { margin: 0; padding: 0; }
-        .scalar-app { min-height: 100vh; }
     </style>
 </head>
 <body>

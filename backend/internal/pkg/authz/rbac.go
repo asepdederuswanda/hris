@@ -13,11 +13,20 @@
 //
 // Inheritance: Jika suatu role tidak memiliki policy untuk resource/action tertentu,
 // maka akan dicek ke parent role hingga ke super_admin atau sampai ketemu.
+//
+// Database-backed RBAC:
+// Enforcer dapat diisi dari database platform via LoadFromDB().
+// Saat startup, default policies di-seed ke database, dan enforcer
+// memuat dari database. Admin dapat menambah/mengubah role & permission
+// via API dan memanggil Reload() untuk sinkronisasi tanpa restart.
 package authz
 
 import (
 	"fmt"
 	"strings"
+
+	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 // Role constants sesuai JWT claims.
@@ -38,6 +47,13 @@ const (
 	DecisionDeny  Decision = "deny"
 )
 
+// defaultPerm digunakan untuk mendefinisikan resource default dan actions-nya
+// saat seeding data RBAC ke database.
+type defaultPerm struct {
+	resource string
+	actions  []string
+}
+
 // Enforcer adalah RBAC enforcer yang memeriksa permission
 // berdasarkan role dan resource-action yang diminta.
 // Mendukung role hierarchy inheritance.
@@ -48,9 +64,13 @@ type Enforcer struct {
 
 	// hierarchy menyimpan parent dari setiap role untuk inheritance
 	hierarchy map[Role]Role
+
+	// db untuk database-backed RBAC (opsional)
+	db *gorm.DB
 }
 
-// NewEnforcer membuat Enforcer baru dengan policy default.
+// NewEnforcer membuat Enforcer baru dengan policy default (hardcoded).
+// Untuk database-backed RBAC, gunakan NewEnforcerFromDB().
 func NewEnforcer() *Enforcer {
 	e := &Enforcer{
 		policies:  make(map[Role]map[string]string),
@@ -61,84 +81,359 @@ func NewEnforcer() *Enforcer {
 	return e
 }
 
-// loadDefaultHierarchy memuat role hierarchy:
-//
-//	super_admin (root — tidak punya parent)
-//	  └── company_admin
-//	        └── manager
-//	              └── employee
+// NewEnforcerFromDB membuat Enforcer dengan data dari database platform.
+// Jika database kosong, akan di-seed dengan default policies.
+// Enforcer ini support Reload() untuk sinkronasi tanpa restart.
+func NewEnforcerFromDB(db *gorm.DB) (*Enforcer, error) {
+	e := &Enforcer{
+		policies:  make(map[Role]map[string]string),
+		hierarchy: make(map[Role]Role),
+		db:        db,
+	}
+
+	// Seed default roles & permissions jika database kosong
+	if err := e.seedDefaults(db); err != nil {
+		return nil, fmt.Errorf("failed to seed RBAC defaults: %w", err)
+	}
+
+	// Load dari database
+	if err := e.loadFromDB(db); err != nil {
+		return nil, fmt.Errorf("failed to load RBAC from database: %w", err)
+	}
+
+	return e, nil
+}
+
+// loadDefaultHierarchy memuat default role hierarchy untuk non-DB enforcer.
 func (e *Enforcer) loadDefaultHierarchy() {
 	e.hierarchy[RoleCompanyAdmin] = RoleSuperAdmin
 	e.hierarchy[RoleManager] = RoleCompanyAdmin
 	e.hierarchy[RoleEmployee] = RoleManager
-	// RoleSuperAdmin tidak punya parent (root)
 }
 
-// loadDefaultPolicies memuat aturan RBAC default untuk semua role.
-//
-// super_admin:
-//   - Platform & Tenant: semua resource & action
-//
-// company_admin:
-//   - Platform: view-only (company, user, license)
-//   - Tenant: full management (org, employee, attendance, leave, payroll, dll)
-//
-// manager:
-//   - Platform: none
-//   - Tenant: view + create + update (tanpa delete)
-//
-// employee:
-//   - Platform: none
-//   - Tenant: view-only
+// loadDefaultPolicies memuat default policies untuk non-DB enforcer.
 func (e *Enforcer) loadDefaultPolicies() {
-	// ========================================
-	// SUPER ADMIN — akses ke semua resource & action
-	// ========================================
-	e.policies[RoleSuperAdmin] = map[string]string{
-		"*": "*", // wildcard: semua resource & action
+	e.AddPolicy(RoleSuperAdmin, "*", "*")
+
+	// Company Admin: platform view-only + tenant full
+	e.AddPolicy(RoleCompanyAdmin, "company", "view")
+	e.AddPolicy(RoleCompanyAdmin, "user", "view")
+	e.AddPolicy(RoleCompanyAdmin, "license", "view")
+	e.AddPolicy(RoleCompanyAdmin, "organization", "*")
+	e.AddPolicy(RoleCompanyAdmin, "employee", "*")
+	e.AddPolicy(RoleCompanyAdmin, "attendance", "*")
+	e.AddPolicy(RoleCompanyAdmin, "leave", "*")
+	e.AddPolicy(RoleCompanyAdmin, "payroll", "*")
+	e.AddPolicy(RoleCompanyAdmin, "competency", "*")
+	e.AddPolicy(RoleCompanyAdmin, "jobmanagement", "*")
+	e.AddPolicy(RoleCompanyAdmin, "employeemovement", "*")
+	e.AddPolicy(RoleCompanyAdmin, "approval", "*")
+
+	// Manager: view/create/update (no delete)
+	e.AddPolicy(RoleManager, "organization", "view,create,update")
+	e.AddPolicy(RoleManager, "employee", "view,create,update")
+	e.AddPolicy(RoleManager, "attendance", "view")
+	e.AddPolicy(RoleManager, "leave", "view,create")
+	e.AddPolicy(RoleManager, "competency", "view,create,update")
+	e.AddPolicy(RoleManager, "jobmanagement", "view,create,update")
+	e.AddPolicy(RoleManager, "employeemovement", "view,create,update")
+	e.AddPolicy(RoleManager, "approval", "view,create,update")
+
+	// Employee: view-only
+	e.AddPolicy(RoleEmployee, "organization", "view")
+	e.AddPolicy(RoleEmployee, "employee", "view")
+	e.AddPolicy(RoleEmployee, "attendance", "view")
+	e.AddPolicy(RoleEmployee, "leave", "view")
+	e.AddPolicy(RoleEmployee, "competency", "view")
+	e.AddPolicy(RoleEmployee, "employeemovement", "view")
+	e.AddPolicy(RoleEmployee, "payroll", "view")
+}
+
+// Reload menyegarkan semua policies dari database.
+// Dipanggil setelah ada perubahan role/permission via API.
+func (e *Enforcer) Reload() error {
+	if e.db == nil {
+		return fmt.Errorf("Enforcer not configured with database")
 	}
 
-	// ========================================
-	// COMPANY ADMIN — platform view-only + tenant full
-	// ========================================
-	e.policies[RoleCompanyAdmin] = map[string]string{
-		// Platform resources (view-only)
-		"company":      "view",
-		"user":         "view",
-		"license":      "view",
+	// Reset
+	e.policies = make(map[Role]map[string]string)
+	e.hierarchy = make(map[Role]Role)
 
-		// Tenant resources (full access)
-		"organization": "*",
-		"employee":     "*",
-		"attendance":   "*",
-		"leave":        "*",
-		"payroll":      "*",
-		"competency":   "*",
-		"jobmanagement": "*",
-		"approval":     "*",
+	// Load ulang dari database
+	return e.loadFromDB(e.db)
+}
+
+// loadFromDB memuat role hierarchy dan policies dari database.
+func (e *Enforcer) loadFromDB(db *gorm.DB) error {
+	// Load semua roles
+	var roles []RbacRole
+	if err := db.Preload("Permissions").Find(&roles).Error; err != nil {
+		return fmt.Errorf("failed to load roles: %w", err)
 	}
 
-	// ========================================
-	// MANAGER — tenant view + create + update (no delete)
-	// ========================================
-	e.policies[RoleManager] = map[string]string{
-		"organization": "view,create,update",
-		"employee":     "view,create,update",
-		"attendance":   "view",
-		"leave":        "view,create",
-		"approval":     "view,create,update",
+	if len(roles) == 0 {
+		return fmt.Errorf("no roles found in database after seeding")
 	}
 
-	// ========================================
-	// EMPLOYEE — tenant view-only
-	// ========================================
-	e.policies[RoleEmployee] = map[string]string{
-		"organization": "view",
-		"employee":     "view",
-		"attendance":   "view",
-		"leave":        "view",
-		"payroll":      "view",
+	// Build slug → Role mapping and hierarchy
+	roleSlugToRole := make(map[string]Role)
+	roleByID := make(map[string]RbacRole)
+
+	for _, r := range roles {
+		roleSlugToRole[r.Slug] = Role(r.Slug)
+		roleByID[r.ID.String()] = r
 	}
+
+	// Load hierarchy dari parent_id
+	for _, r := range roles {
+		if r.ParentID != nil {
+			parentID := r.ParentID.String()
+			if parent, ok := roleByID[parentID]; ok {
+				e.hierarchy[Role(r.Slug)] = Role(parent.Slug)
+			}
+		}
+	}
+
+	// Load semua permissions
+	var permissions []RbacPermission
+	if err := db.Find(&permissions).Error; err != nil {
+		return fmt.Errorf("failed to load permissions: %w", err)
+	}
+
+	// Build permission lookup: id → (resource, action)
+	permMap := make(map[string]struct{ resource, action string })
+	for _, p := range permissions {
+		permMap[p.ID.String()] = struct{ resource, action string }{
+			resource: p.Resource,
+			action:   p.Action,
+		}
+	}
+
+	// Build policies dari role_permissions
+	for _, role := range roles {
+		roleSlug := Role(role.Slug)
+		if _, exists := e.policies[roleSlug]; !exists {
+			e.policies[roleSlug] = make(map[string]string)
+		}
+
+		for _, rp := range role.Permissions {
+			perm, ok := permMap[rp.PermissionID.String()]
+			if !ok {
+				continue
+			}
+
+			resource := perm.resource
+			action := perm.action
+
+			// Wildcard handling
+			if resource == "*" {
+				e.policies[roleSlug]["*"] = "*"
+				continue
+			}
+
+			// Accumulate actions for same resource
+			if existing, ok := e.policies[roleSlug][resource]; ok {
+				if existing == "*" {
+					continue // already wildcard
+				}
+				if action == "*" {
+					e.policies[roleSlug][resource] = "*"
+				} else if !strings.Contains(existing, action) {
+					e.policies[roleSlug][resource] = existing + "," + action
+				}
+			} else {
+				e.policies[roleSlug][resource] = action
+			}
+		}
+	}
+
+	return nil
+}
+
+// seedDefaults memasukkan role dan permission default ke database
+// jika tabel masih kosong. Hanya berjalan sekali saat pertama kali.
+func (e *Enforcer) seedDefaults(db *gorm.DB) error {
+	var count int64
+
+	// Cek apakah sudah ada data
+	if err := db.Model(&RbacRole{}).Count(&count).Error; err != nil {
+		return err
+	}
+	if count > 0 {
+		return nil // sudah ada data, skip seed
+	}
+
+	// Buat default roles
+	superAdminUUID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+	companyAdminUUID := uuid.MustParse("00000000-0000-0000-0000-000000000002")
+	managerUUID := uuid.MustParse("00000000-0000-0000-0000-000000000003")
+	employeeUUID := uuid.MustParse("00000000-0000-0000-0000-000000000004")
+
+	roles := []RbacRole{
+		{ID: superAdminUUID, Name: "Super Admin", Slug: string(RoleSuperAdmin), Description: strPtr("Full access to all resources"), IsSystem: true},
+		{ID: companyAdminUUID, Name: "Company Admin", Slug: string(RoleCompanyAdmin), Description: strPtr("Platform view + tenant full access"), ParentID: &superAdminUUID, IsSystem: true},
+		{ID: managerUUID, Name: "Manager", Slug: string(RoleManager), Description: strPtr("Tenant view/create/update"), ParentID: &companyAdminUUID, IsSystem: true},
+		{ID: employeeUUID, Name: "Employee", Slug: string(RoleEmployee), Description: strPtr("Tenant view-only"), ParentID: &managerUUID, IsSystem: true},
+	}
+
+	for _, r := range roles {
+		if err := db.Create(&r).Error; err != nil {
+			return fmt.Errorf("failed to seed role %s: %w", r.Slug, err)
+		}
+	}
+
+	// Buat permissions dari hardcoded defaults
+	allResources := []defaultPerm{
+		// Platform resources
+		{"company", []string{"view", "create", "update", "delete", "suspend", "activate", "terminate", "backup", "restore"}},
+		{"user", []string{"view", "create", "update"}},
+		{"module", []string{"view", "create", "update", "activate", "deactivate"}},
+		{"license", []string{"view", "create", "update"}},
+		{"monitoring", []string{"view"}},
+		// Tenant resources
+		{"organization", []string{"view", "create", "update", "delete"}},
+		{"employee", []string{"view", "create", "update", "delete"}},
+		{"attendance", []string{"view", "create", "update", "delete"}},
+		{"leave", []string{"view", "create", "update", "delete"}},
+		{"payroll", []string{"view", "create", "update", "delete"}},
+		{"competency", []string{"view", "create", "update", "delete"}},
+		{"jobmanagement", []string{"view", "create", "update", "delete"}},
+		{"employeemovement", []string{"view", "create", "update", "delete"}},
+		{"approval", []string{"view", "create", "update", "delete"}},
+	}
+
+	// Simpan permission IDs untuk mapping role_permissions nanti
+	permIDs := make(map[string]map[string]uuid.UUID) // resource → action → id
+
+	for _, r := range allResources {
+		if _, ok := permIDs[r.resource]; !ok {
+			permIDs[r.resource] = make(map[string]uuid.UUID)
+		}
+		for _, action := range r.actions {
+			perm := RbacPermission{
+				Resource:    r.resource,
+				Action:      action,
+				Description: strPtr(fmt.Sprintf("Can %s %s", action, r.resource)),
+				IsSystem:    true,
+			}
+			if err := db.Create(&perm).Error; err != nil {
+				return fmt.Errorf("failed to seed permission %s.%s: %w", r.resource, action, err)
+			}
+			permIDs[r.resource][action] = perm.ID
+		}
+	}
+
+	// Helper untuk menambah role_permissions
+	addPerms := func(roleID uuid.UUID, perms map[string][]string) error {
+		for resource, actions := range perms {
+			if resource == "*" {
+				// Wildcard: tambahkan semua permission
+				for _, r := range allResources {
+					for _, action := range r.actions {
+						if id, ok := permIDs[r.resource][action]; ok {
+							rp := RbacRolePermission{RoleID: roleID, PermissionID: id}
+							if err := db.Create(&rp).Error; err != nil {
+								return err
+							}
+						}
+					}
+				}
+			} else {
+				for _, action := range actions {
+					if action == "*" {
+						// Semua action untuk resource ini
+						for _, a := range allPermActions(resource, allResources) {
+							if id, ok := permIDs[resource][a]; ok {
+								rp := RbacRolePermission{RoleID: roleID, PermissionID: id}
+								if err := db.Create(&rp).Error; err != nil {
+									return err
+								}
+							}
+						}
+					} else {
+						if id, ok := permIDs[resource][action]; ok {
+							rp := RbacRolePermission{RoleID: roleID, PermissionID: id}
+							if err := db.Create(&rp).Error; err != nil {
+								return err
+							}
+						}
+					}
+				}
+			}
+		}
+		return nil
+	}
+
+	// Super Admin: semua permission
+	if err := addPerms(superAdminUUID, map[string][]string{"*": {"*"}}); err != nil {
+		return err
+	}
+
+	// Company Admin: platform view-only + tenant full
+	companyAdminPerms := map[string][]string{
+		"company":          {"view"},
+		"user":             {"view"},
+		"license":          {"view"},
+		"organization":     {"*"},
+		"employee":         {"*"},
+		"attendance":       {"*"},
+		"leave":            {"*"},
+		"payroll":          {"*"},
+		"competency":       {"*"},
+		"jobmanagement":    {"*"},
+		"employeemovement": {"*"},
+		"approval":         {"*"},
+	}
+	if err := addPerms(companyAdminUUID, companyAdminPerms); err != nil {
+		return err
+	}
+
+	// Manager: view/create/update (no delete)
+	managerPerms := map[string][]string{
+		"organization":     {"view", "create", "update"},
+		"employee":         {"view", "create", "update"},
+		"attendance":       {"view"},
+		"leave":            {"view", "create"},
+		"competency":       {"view", "create", "update"},
+		"jobmanagement":    {"view", "create", "update"},
+		"employeemovement": {"view", "create", "update"},
+		"approval":         {"view", "create", "update"},
+	}
+	if err := addPerms(managerUUID, managerPerms); err != nil {
+		return err
+	}
+
+	// Employee: view-only
+	employeePerms := map[string][]string{
+		"organization":     {"view"},
+		"employee":         {"view"},
+		"attendance":       {"view"},
+		"leave":            {"view"},
+		"payroll":          {"view"},
+		"competency":       {"view"},
+		"employeemovement": {"view"},
+	}
+	if err := addPerms(employeeUUID, employeePerms); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// allPermActions mengembalikan semua action yang terdaftar untuk suatu resource.
+func allPermActions(resource string, resources []defaultPerm) []string {
+	for _, r := range resources {
+		if r.resource == resource {
+			return r.actions
+		}
+	}
+	return nil
+}
+
+// strPtr helper.
+func strPtr(s string) *string {
+	return &s
 }
 
 // Check memeriksa apakah role tertentu diizinkan mengakses
@@ -272,7 +567,8 @@ func singularize(s string) string {
 		"employees":                  "employee",
 		"attendances":                "attendance",
 		"competencies":               "competency",
-		"job-management": "jobmanagement",
+		"job-management":             "jobmanagement",
+		"employee-movements":         "employeemovement",
 	}
 	if singular, ok := irregular[s]; ok {
 		return singular

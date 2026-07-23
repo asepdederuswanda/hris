@@ -27,16 +27,53 @@ database:
   tenant_super_password: ""
   # tenant_sslmode: "disable"
 
-  # Connection pool
-  max_open_conns: 25
-  max_idle_conns: 10
-  conn_max_lifetime_ms: 3600000  # 1 jam
+  # ====================================================================
+  # Connection Pool Configuration
+  # ====================================================================
+  #
+  # Platform pool (single database untuk manajemen platform):
+  # Moderate pool karena hanya 1 DB.
+  #
+  # Tenant pool (satu pool PER tenant database):
+  # Harus lebih kecil karena total koneksi = pool_size × jumlah tenant.
+  # Contoh: 50 tenant × 10 open = 500 koneksi, masih reasonable.
+  #
+  # PgBouncer (recommended untuk production):
+  #   - Transaction mode: pool_size=25, default_pool_size=10
+  #   - Bisa handle 1000+ tenant dengan pool kecil
+  # ====================================================================
+
+  # Platform connection pool
+  max_open_conns: 10                # Platform: 10 cukup untuk single DB
+  max_idle_conns: 5                 # Platform: 5 idle
+  conn_max_lifetime_ms: 3600000     # Platform: 1 jam
+
+  # Tenant connection pool (per-tenant)
+  tenant_max_open_conns: 10              # Per tenant: 10 (50 tenant = 500 total)
+  tenant_max_idle_conns: 3               # Per tenant: 3 idle
+  tenant_conn_max_lifetime_ms: 1800000   # Per tenant: 30 menit
+  tenant_conn_max_idle_time_ms: 300000   # Per tenant: 5 menit idle → close
 
 redis:
   host: "localhost"
   port: 6379
   password: ""
   db: 0
+
+# ====================================================================
+# Distributed Cache Configuration (Redis Pub/Sub)
+# ====================================================================
+# Cache menggunakan two-tier architecture:
+#   Level 1: Local in-memory (sync.Map + TTL) — sub-millisecond, per instance
+#   Level 2: Redis (shared key-value) — millisecond, shared across instances
+#
+# Cache invalidation via Redis Pub/Sub:
+#   Saat instance A mengupdate data, dia publish pesan ke channel
+#   "hris:cache:invalidate". Semua instance lain subscribe ke channel
+#   tersebut dan langsung meng-evict local cache mereka.
+cache:
+  default_ttl: 300             # 5 menit (detik)
+  key_prefix: "hris:cache"     # prefix untuk semua cache keys
 
 jwt:
   secret: "change-this-to-a-strong-secret-in-production"
@@ -54,6 +91,10 @@ otel:
   service_name: "hris-platform"
   collector_endpoint: "localhost:4317"
   sample_rate: 0.1
+
+# Encryption key untuk AES-256-GCM (32-byte hex-encoded, 64 characters)
+# Wajib diset di production untuk mengenkripsi kredensial tenant DB
+# encryption_key: ""
 
 cors:
   allowed_origins:

@@ -13,6 +13,7 @@ package database
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"sync"
 	"time"
@@ -23,6 +24,7 @@ import (
 	"gorm.io/gorm"
 	gormlogger "gorm.io/gorm/logger"
 
+	"github.com/inthros/hris-platform/internal/pkg/crypto"
 	"github.com/inthros/hris-platform/internal/pkg/driver"
 )
 
@@ -64,10 +66,20 @@ type Config struct {
 	TenantSuperUser   string
 	TenantSuperPass   string
 	TenantSSLMode     string
+
+	// Platform connection pool settings (single DB)
 	MaxOpenConns      int
 	MaxIdleConns      int
 	ConnMaxLifetimeMs int
-	LogLevel          gormlogger.LogLevel
+
+	// Tenant connection pool settings (per-tenant)
+	// Digunakan saat connectTenant() untuk membatasi koneksi per tenant DB
+	TenantMaxOpenConns      int
+	TenantMaxIdleConns      int
+	TenantConnMaxLifetimeMs int
+	TenantConnMaxIdleTimeMs int
+
+	LogLevel gormlogger.LogLevel
 }
 
 // NewManager membuat Manager baru dengan koneksi ke platform database.
@@ -172,15 +184,25 @@ func (m *Manager) connectTenant(companyID string) (*gorm.DB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to get sql.DB for tenant: %w", err)
 	}
-	sqlDB.SetMaxOpenConns(m.cfg.MaxOpenConns)
-	sqlDB.SetMaxIdleConns(m.cfg.MaxIdleConns)
-	sqlDB.SetConnMaxLifetime(time.Duration(m.cfg.ConnMaxLifetimeMs) * time.Millisecond)
+
+	// Per-tenant connection pool: lebih kecil dari platform pool
+	// untuk mencegah connection storm saat banyak tenant aktif.
+	sqlDB.SetMaxOpenConns(m.cfg.TenantMaxOpenConns)
+	sqlDB.SetMaxIdleConns(m.cfg.TenantMaxIdleConns)
+	sqlDB.SetConnMaxLifetime(time.Duration(m.cfg.TenantConnMaxLifetimeMs) * time.Millisecond)
+	if m.cfg.TenantConnMaxIdleTimeMs > 0 {
+		sqlDB.SetConnMaxIdleTime(time.Duration(m.cfg.TenantConnMaxIdleTimeMs) * time.Millisecond)
+	}
 
 	m.tenants[companyID] = db
 	m.logger.Info("Connected to tenant database",
 		zap.String("company_id", companyID),
 		zap.String("db_name", conn.DBName),
 		zap.String("driver", driver),
+		zap.Int("max_open", m.cfg.TenantMaxOpenConns),
+		zap.Int("max_idle", m.cfg.TenantMaxIdleConns),
+		zap.Duration("max_lifetime", time.Duration(m.cfg.TenantConnMaxLifetimeMs)*time.Millisecond),
+		zap.Duration("max_idle_time", time.Duration(m.cfg.TenantConnMaxIdleTimeMs)*time.Millisecond),
 	)
 
 	return db, nil
@@ -270,11 +292,26 @@ func (m *Manager) ProvisionTenant(companyID, dbName, dbUser, dbPassword, driverT
 }
 
 // SaveTenantConnection menyimpan atau mengupdate TenantConnection di platform DB.
+// Password akan dienkripsi dengan AES-256-GCM sebelum disimpan.
 func (m *Manager) SaveTenantConnection(conn *TenantConnection) error {
-	return m.platformDB.Table("tenant_connections").Create(conn).Error
+	// Encrypt password before saving
+	if conn.Password != "" {
+		encrypted, err := crypto.EncryptString(conn.Password)
+		if err != nil {
+			return fmt.Errorf("failed to encrypt tenant password: %w", err)
+		}
+		conn.Password = encrypted
+	}
+
+	if err := m.platformDB.Table("tenant_connections").Create(conn).Error; err != nil {
+		return fmt.Errorf("failed to save tenant connection: %w", err)
+	}
+
+	return nil
 }
 
 // FindTenantConnection mencari TenantConnection berdasarkan company_id.
+// Password akan didekripsi dari AES-256-GCM sebelum dikembalikan.
 func (m *Manager) FindTenantConnection(companyID string) (*TenantConnection, error) {
 	var conn TenantConnection
 	if err := m.platformDB.
@@ -283,6 +320,22 @@ func (m *Manager) FindTenantConnection(companyID string) (*TenantConnection, err
 		First(&conn).Error; err != nil {
 		return nil, fmt.Errorf("tenant connection not found: %w", err)
 	}
+
+	// Decrypt password
+	if conn.Password != "" {
+		decrypted, err := crypto.DecryptString(conn.Password)
+		if err != nil {
+			m.logger.Warn("Failed to decrypt tenant password (may be plaintext from before encryption was added)",
+				zap.String("company_id", companyID),
+				zap.Error(err),
+			)
+			// Fallback: treat as plaintext jika dekripsi gagal (data lama)
+			// Password tetap apa adanya
+		} else {
+			conn.Password = decrypted
+		}
+	}
+
 	return &conn, nil
 }
 
@@ -441,6 +494,90 @@ func (m *Manager) DropTenantDB(companyID string) error {
 	return nil
 }
 
+// EncryptLegacyPasswords menemukan dan mengenkripsi password tenant_connections
+// yang masih dalam bentuk plaintext (legacy data sebelum enkripsi diaktifkan).
+//
+// Metode deteksi:
+//   1. Cek apakah password LooksEncrypted (valid hex + panjang >= 12 bytes)
+//      a. Jika YA → coba decrypt
+//         - Berhasil → sudah terenkripsi dengan kunci saat ini, skip
+//         - Gagal → terenkripsi dengan kunci berbeda! Log warning, skip untuk hindari data loss
+//      b. Jika TIDAK → plaintext, encrypt & update
+//
+// Design ini mencegah data loss jika HRIS_ENCRYPTION_KEY dirotasi.
+//
+// Returns: jumlah password yang berhasil dienkripsi, jumlah error.
+func (m *Manager) EncryptLegacyPasswords() (int, int, error) {
+	type TenantConnRow struct {
+		ID       string `gorm:"column:id;type:char(36)"`
+		Password string `gorm:"column:password;type:varchar(255)"`
+	}
+
+	var rows []TenantConnRow
+	if err := m.platformDB.Table("tenant_connections").Find(&rows).Error; err != nil {
+		return 0, 0, fmt.Errorf("failed to query tenant_connections: %w", err)
+	}
+
+	var encryptedCount, errorCount int
+
+	for _, row := range rows {
+		if row.Password == "" {
+			continue // skip empty passwords
+		}
+
+		if crypto.LooksEncrypted(row.Password) {
+			// Looks like encrypted data → coba decrypt untuk verifikasi
+			if _, err := crypto.DecryptString(row.Password); err != nil {
+				// Looks encrypted tapi gagal decrypt → kemungkinan kunci berbeda
+				m.logger.Warn("Password looks encrypted but decryption failed (wrong encryption key?), skipping to avoid data loss",
+					zap.String("tenant_connection_id", row.ID),
+					zap.Error(err),
+				)
+				errorCount++
+				continue
+			}
+			// Decrypt berhasil → sudah terenkripsi dengan kunci saat ini
+			m.logger.Debug("Password already encrypted with current key, skipping",
+				zap.String("tenant_connection_id", row.ID),
+			)
+			continue
+		}
+
+		// Tidak LooksEncrypted → ini pasti plaintext legacy, encrypt
+		m.logger.Info("Found legacy plaintext password, encrypting...",
+			zap.String("tenant_connection_id", row.ID),
+		)
+
+		encrypted, err := crypto.EncryptString(row.Password)
+		if err != nil {
+			m.logger.Error("Failed to encrypt legacy password",
+				zap.String("tenant_connection_id", row.ID),
+				zap.Error(err),
+			)
+			errorCount++
+			continue
+		}
+
+		if err := m.platformDB.Table("tenant_connections").
+			Where("id = ?", row.ID).
+			Update("password", encrypted).Error; err != nil {
+			m.logger.Error("Failed to update legacy password",
+				zap.String("tenant_connection_id", row.ID),
+				zap.Error(err),
+			)
+			errorCount++
+			continue
+		}
+
+		encryptedCount++
+		m.logger.Info("Legacy password encrypted successfully",
+			zap.String("tenant_connection_id", row.ID),
+		)
+	}
+
+	return encryptedCount, errorCount, nil
+}
+
 // CloseAll menutup semua koneksi database.
 func (m *Manager) CloseAll() error {
 	m.mu.Lock()
@@ -483,6 +620,55 @@ func (m *Manager) HealthCheck() map[string]error {
 	m.mu.RUnlock()
 
 	return results
+}
+
+// PoolStat menyimpan statistik pool untuk satu koneksi database.
+type PoolStat struct {
+	MaxOpen           int    `json:"max_open"`
+	Open              int    `json:"open"`
+	InUse             int    `json:"in_use"`
+	Idle              int    `json:"idle"`
+	WaitCount         int64  `json:"wait_count"`
+	WaitDuration      string `json:"wait_duration"`
+	MaxIdleClosed     int64  `json:"max_idle_closed"`
+	MaxLifetimeClosed int64  `json:"max_lifetime_closed"`
+}
+
+// PoolStats mengembalikan statistik connection pool untuk platform dan semua
+// tenant yang terkoneksi. Berguna untuk health check endpoint, metrics, dan
+// debugging connection leaks.
+func (m *Manager) PoolStats() map[string]*PoolStat {
+	stats := make(map[string]*PoolStat)
+
+	collectStat := func(name string, sqlDB *sql.DB) {
+		s := sqlDB.Stats()
+		stats[name] = &PoolStat{
+			MaxOpen:           s.MaxOpenConnections,
+			Open:              s.OpenConnections,
+			InUse:             s.InUse,
+			Idle:              s.Idle,
+			WaitCount:         s.WaitCount,
+			WaitDuration:      s.WaitDuration.String(),
+			MaxIdleClosed:     s.MaxIdleClosed,
+			MaxLifetimeClosed: s.MaxLifetimeClosed,
+		}
+	}
+
+	// Platform
+	if sqlDB, err := m.platformDB.DB(); err == nil {
+		collectStat("platform", sqlDB)
+	}
+
+	// Tenants
+	m.mu.RLock()
+	for companyID, db := range m.tenants {
+		if sqlDB, err := db.DB(); err == nil {
+			collectStat(fmt.Sprintf("tenant:%s", companyID), sqlDB)
+		}
+	}
+	m.mu.RUnlock()
+
+	return stats
 }
 
 // ========================================================================

@@ -296,6 +296,8 @@ func (schemaMigration) TableName() string {
 }
 
 // ensureTrackingTable membuat tabel schema_migrations jika belum ada.
+// Menggunakan SQL cross-dialect (tanpa ENGINE/CHARSET MySQL-specific)
+// agar kompatibel dengan PostgreSQL dan MySQL.
 func (m *Migrator) ensureTrackingTable() error {
 	sql := `CREATE TABLE IF NOT EXISTS schema_migrations (
 		version     VARCHAR(14) PRIMARY KEY,
@@ -303,7 +305,7 @@ func (m *Migrator) ensureTrackingTable() error {
 		applied_at  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
 		checksum    VARCHAR(64) NOT NULL DEFAULT '',
 		file_path   VARCHAR(500) NOT NULL DEFAULT ''
-	) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;`
+	);`
 
 	return m.db.Exec(sql).Error
 }

@@ -18,7 +18,7 @@ type TenantConnection struct {
 	Port      int            `gorm:"type:integer;not null;default:5432" json:"port"`
 	DBName    string         `gorm:"type:varchar(100);not null" json:"db_name"`
 	Username  string         `gorm:"type:varchar(100);not null" json:"username"`
-	Password  string         `gorm:"type:varchar(255);not null" json:"-"` // TODO: encrypt at rest for production
+	Password  string         `gorm:"type:varchar(255);not null" json:"-"` // Dienskripsi AES-256-GCM sebelum disimpan (via database.Manager)
 	SSLMode   string         `gorm:"type:varchar(20);default:'require'" json:"sslmode"`
 	IsActive  bool           `gorm:"default:true" json:"is_active"`
 	CreatedAt time.Time      `json:"created_at"`

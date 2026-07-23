@@ -18,11 +18,16 @@ type Config struct {
 	Server   ServerConfig   `mapstructure:"server"`
 	Database DatabaseConfig `mapstructure:"database"`
 	Redis    RedisConfig    `mapstructure:"redis"`
+	Cache    CacheConfig    `mapstructure:"cache"`
 	JWT      JWTConfig      `mapstructure:"jwt"`
 	Logger   LoggerConfig   `mapstructure:"logger"`
 	OTEL     OTELConfig     `mapstructure:"otel"`
 	CORS     CORSConfig     `mapstructure:"cors"`
 }
+
+// Catatan: Kunci enkripsi AES-256-GCM dibaca langsung dari environment variable
+// HRIS_ENCRYPTION_KEY oleh package internal/pkg/crypto, bukan dari config.
+// Lihat crypto.go untuk detail format key.
 
 type ServerConfig struct {
 	Port         string `mapstructure:"port"`
@@ -47,9 +52,21 @@ type DatabaseConfig struct {
 	TenantSuperUser   string `mapstructure:"tenant_super_user"`
 	TenantSuperPass   string `mapstructure:"tenant_super_password"`
 	TenantSSLMode     string `mapstructure:"tenant_sslmode"`
-	MaxOpenConns      int    `mapstructure:"max_open_conns"`
-	MaxIdleConns      int    `mapstructure:"max_idle_conns"`
-	ConnMaxLifetimeMs int    `mapstructure:"conn_max_lifetime_ms"`
+
+	// Platform connection pool (single DB, moderate pool)
+	MaxOpenConns      int `mapstructure:"max_open_conns"`
+	MaxIdleConns      int `mapstructure:"max_idle_conns"`
+	ConnMaxLifetimeMs int `mapstructure:"conn_max_lifetime_ms"`
+
+	// Tenant connection pool (per-tenant, smaller pool to avoid connection storm)
+	// Set lebih rendah dari platform pool karena ada N tenant.
+	// Rekomendasi: 5-15 open, 2-5 idle, max lifetime 30-60 menit.
+	TenantMaxOpenConns      int `mapstructure:"tenant_max_open_conns"`
+	TenantMaxIdleConns      int `mapstructure:"tenant_max_idle_conns"`
+	TenantConnMaxLifetimeMs int `mapstructure:"tenant_conn_max_lifetime_ms"`
+	// MaxIdleTime: koneksi idle akan ditutup setelah durasi ini.
+	// Berguna untuk mengurangi koneksi yang tidak terpakai saat traffic sepi.
+	TenantConnMaxIdleTimeMs int `mapstructure:"tenant_conn_max_idle_time_ms"`
 }
 
 type RedisConfig struct {
@@ -57,6 +74,14 @@ type RedisConfig struct {
 	Port     int    `mapstructure:"port"`
 	Password string `mapstructure:"password"`
 	DB       int    `mapstructure:"db"`
+}
+
+// CacheConfig untuk distributed cache dengan Redis Pub/Sub.
+type CacheConfig struct {
+	// Default TTL untuk cache items (detik). Default: 300 (5 menit).
+	DefaultTTL int `mapstructure:"default_ttl"`
+	// KeyPrefix untuk namespacing cache keys. Default: "hris:cache".
+	KeyPrefix string `mapstructure:"key_prefix"`
 }
 
 type JWTConfig struct {
@@ -114,13 +139,21 @@ func Load(configPath string) (*Config, error) {
 	v.SetDefault("database.tenant_port", 5432)
 	v.SetDefault("database.tenant_super_user", "postgres")
 	v.SetDefault("database.tenant_sslmode", "disable")
-	v.SetDefault("database.max_open_conns", 25)
-	v.SetDefault("database.max_idle_conns", 10)
-	v.SetDefault("database.conn_max_lifetime_ms", 3600000)
+	v.SetDefault("database.max_open_conns", 10)           // Platform: 10 cukup untuk single DB
+	v.SetDefault("database.max_idle_conns", 5)            // Platform: 5 idle
+	v.SetDefault("database.conn_max_lifetime_ms", 3600000) // Platform: 1 jam
+
+	v.SetDefault("database.tenant_max_open_conns", 10)              // Per tenant: 10 (dengan 50 tenant = 500 total)
+	v.SetDefault("database.tenant_max_idle_conns", 3)               // Per tenant: 3 idle
+	v.SetDefault("database.tenant_conn_max_lifetime_ms", 1800000)   // Per tenant: 30 menit
+	v.SetDefault("database.tenant_conn_max_idle_time_ms", 300000)   // Per tenant: 5 menit idle → close
 
 	v.SetDefault("redis.host", "localhost")
 	v.SetDefault("redis.port", 6379)
 	v.SetDefault("redis.db", 0)
+
+	v.SetDefault("cache.default_ttl", 300) // 5 menit
+	v.SetDefault("cache.key_prefix", "hris:cache")
 
 	v.SetDefault("jwt.access_token_ttl", 15)  // 15 menit
 	v.SetDefault("jwt.refresh_token_ttl", 24) // 24 jam

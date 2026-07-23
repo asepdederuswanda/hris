@@ -1,5 +1,5 @@
 -- Migration: 002_create_tenant_connections
--- Database: Platform (MySQL)
+-- Database: Platform (Cross-Dialect)
 -- Tabel untuk menyimpan konfigurasi koneksi database per tenant
 
 CREATE TABLE IF NOT EXISTS tenant_connections (
@@ -10,16 +10,16 @@ CREATE TABLE IF NOT EXISTS tenant_connections (
     port        INT NOT NULL DEFAULT 5432,
     db_name     VARCHAR(100) NOT NULL,
     username    VARCHAR(100) NOT NULL,
-    password    VARCHAR(255) NOT NULL COMMENT 'TODO: encrypt at rest for production',
+    password    VARCHAR(255) NOT NULL,
     ssl_mode    VARCHAR(20) NOT NULL DEFAULT 'require',
-    is_active   TINYINT(1) NOT NULL DEFAULT 1,
+    is_active   SMALLINT NOT NULL DEFAULT 1,
     created_at  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    updated_at  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     deleted_at  TIMESTAMP NULL,
 
-    INDEX idx_tc_company (company_id),
-    INDEX idx_tc_active (is_active),
-    INDEX idx_tc_deleted_at (deleted_at),
-
     CONSTRAINT fk_tc_company FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+);
+
+CREATE INDEX idx_tc_company ON tenant_connections (company_id);
+CREATE INDEX idx_tc_active ON tenant_connections (is_active);
+CREATE INDEX idx_tc_deleted_at ON tenant_connections (deleted_at);

@@ -16,6 +16,7 @@ import (
 
 	"github.com/inthros/hris-platform/internal/pkg/auth"
 	"github.com/inthros/hris-platform/internal/pkg/authz"
+	"github.com/inthros/hris-platform/internal/pkg/cache"
 	"github.com/inthros/hris-platform/internal/pkg/config"
 	"github.com/inthros/hris-platform/internal/pkg/database"
 	"github.com/inthros/hris-platform/internal/pkg/logger"
@@ -60,32 +61,49 @@ func main() {
 	l := logger.New(cfg.Logger.Level, cfg.Logger.Format, "hris-platform")
 	defer l.Sync()
 
-	// 3. Initialize database manager (multi-tenant, multi-driver)
+	// 3. Initialize distributed cache (Redis + local in-memory + Pub/Sub invalidation)
+	cacheManager, err := cache.New(cache.Config{
+		RedisAddr:     cfg.Redis.RedisAddr(),
+		RedisPassword: cfg.Redis.Password,
+		RedisDB:       cfg.Redis.DB,
+		DefaultTTL:    time.Duration(cfg.Cache.DefaultTTL) * time.Second,
+	}, l)
+	if err != nil {
+		l.Fatal("Failed to initialize cache", zap.Error(err))
+	}
+	defer cacheManager.Close()
+
+	// 4. Initialize database manager (multi-tenant, multi-driver)
 	dbManager, err := database.NewManager(&database.Config{
-		Driver:            cfg.Database.Driver,
-		PlatformDSN:       cfg.Database.PlatformDSN(),
-		PlatformHost:      cfg.Database.PlatformHost,
-		PlatformPort:      cfg.Database.PlatformPort,
-		PlatformUser:      cfg.Database.PlatformUser,
-		PlatformPassword:  cfg.Database.PlatformPassword,
-		PlatformSSLMode:   cfg.Database.PlatformSSLMode,
-		TenantHost:        cfg.Database.TenantHost,
-		TenantPort:        cfg.Database.TenantPort,
-		TenantSuperUser:   cfg.Database.TenantSuperUser,
-		TenantSuperPass:   cfg.Database.TenantSuperPass,
-		TenantSSLMode:     cfg.Database.TenantSSLMode,
-		MaxOpenConns:      cfg.Database.MaxOpenConns,
-		MaxIdleConns:      cfg.Database.MaxIdleConns,
-		ConnMaxLifetimeMs: cfg.Database.ConnMaxLifetimeMs,
-		LogLevel:          4, // Warn
+		Driver:                  cfg.Database.Driver,
+		PlatformDSN:             cfg.Database.PlatformDSN(),
+		PlatformHost:            cfg.Database.PlatformHost,
+		PlatformPort:            cfg.Database.PlatformPort,
+		PlatformUser:            cfg.Database.PlatformUser,
+		PlatformPassword:        cfg.Database.PlatformPassword,
+		PlatformSSLMode:         cfg.Database.PlatformSSLMode,
+		TenantHost:              cfg.Database.TenantHost,
+		TenantPort:              cfg.Database.TenantPort,
+		TenantSuperUser:         cfg.Database.TenantSuperUser,
+		TenantSuperPass:         cfg.Database.TenantSuperPass,
+		TenantSSLMode:           cfg.Database.TenantSSLMode,
+		MaxOpenConns:            cfg.Database.MaxOpenConns,
+		MaxIdleConns:            cfg.Database.MaxIdleConns,
+		ConnMaxLifetimeMs:       cfg.Database.ConnMaxLifetimeMs,
+		TenantMaxOpenConns:      cfg.Database.TenantMaxOpenConns,
+		TenantMaxIdleConns:      cfg.Database.TenantMaxIdleConns,
+		TenantConnMaxLifetimeMs: cfg.Database.TenantConnMaxLifetimeMs,
+		TenantConnMaxIdleTimeMs: cfg.Database.TenantConnMaxIdleTimeMs,
+		LogLevel:                4, // Warn
 	}, l)
 	if err != nil {
 		l.Fatal("Failed to initialize database manager", zap.Error(err))
 	}
 	defer dbManager.CloseAll()
 
-	// 4. Handle migration CLI commands (run and exit without starting server)
+	// 5. Handle migration CLI commands (run and exit without starting server)
 	if *migrateDown || *migrateTo != "" {
+		cacheManager.Close()
 		runMigrationCommand(l, dbManager, *migrateDown, *migrateTo)
 		return
 	}
@@ -105,29 +123,27 @@ func main() {
 	// Create auth middleware once (reused across all platform modules)
 	authMW := middleware.AuthJWT(authManager, l)
 
-	// Initialize RBAC enforcer and middleware
-	rbacEnforcer := authz.NewEnforcer()
-	rbacMW := authz.NewMiddleware(authz.MiddlewareConfig{Enforcer: rbacEnforcer})
-
 	// 6a. Register platform modules (ordered by priority)
+	// Note: rbacMW diinisialisasi setelah SQL migrations karena membutuhkan
+	// tabel RBAC di database. Tapi kita pass nil dulu dan update setelah init.
 	platformModules = append(platformModules,
 		module.ModuleRegistration{
-			Module:   company.NewModule(dbManager, l, authMW, rbacMW),
+			Module:   company.NewModule(dbManager, l, authMW, nil),
 			TargetDB: module.TargetPlatform,
 			Priority: 1,
 		},
 		module.ModuleRegistration{
-			Module:   user.NewModule(dbManager, authManager, l, authMW, rbacMW),
+			Module:   user.NewModule(dbManager, authManager, l, authMW, nil),
 			TargetDB: module.TargetPlatform,
 			Priority: 2,
 		},
 		module.ModuleRegistration{
-			Module:   modulemgmt.NewModule(dbManager, l, authMW, rbacMW),
+			Module:   modulemgmt.NewModule(dbManager, l, authMW, nil),
 			TargetDB: module.TargetPlatform,
 			Priority: 3,
 		},
 		module.ModuleRegistration{
-			Module:   license.NewModule(dbManager, l, authMW, rbacMW),
+			Module:   license.NewModule(dbManager, l, authMW, nil),
 			TargetDB: module.TargetPlatform,
 			Priority: 4,
 		},
@@ -175,15 +191,27 @@ func main() {
 
 	// Note: Tenant migrations run during tenant provisioning,
 	// not at startup. Each tenant gets its own database.
-
-	// 9. Run SQL seeders
 	l.Info("Running SQL seeders...")
 	seederMigrator := migrator.New(dbManager.PlatformDB(), l, migrator.MigrationsFS, migrator.RootSeeders)
 	if err := seederMigrator.Up(); err != nil {
 		l.Warn("SQL seeder warning", zap.Error(err))
 	}
 
-	// 10. Run module seeders for platform modules
+	// 10. Initialize database-backed RBAC enforcer (seeds defaults if empty)
+	l.Info("Initializing database-backed RBAC enforcer...")
+	rbacEnforcer, err := authz.NewEnforcerFromDB(dbManager.PlatformDB())
+	if err != nil {
+		l.Fatal("Failed to initialize RBAC enforcer", zap.Error(err))
+	}
+	rbacMW := authz.NewMiddleware(authz.MiddlewareConfig{Enforcer: rbacEnforcer})
+
+	// 10a. Create RBAC service & handler for management API
+	rbacLogger := l.Named("rbac")
+	rbacRepo := authz.NewRepository(dbManager.PlatformDB())
+	rbacService := authz.NewService(rbacRepo, rbacEnforcer, rbacLogger)
+	rbacHandler := authz.NewHandler(rbacService)
+
+	// 10b. Run module seeders for platform modules
 	l.Info("Running platform module seeders...")
 	for _, reg := range platformModules {
 		if err := reg.Module.Seed(dbManager.PlatformDB()); err != nil {
@@ -213,9 +241,15 @@ func main() {
 		tenantModules,
 	)
 
+	// Register platform RBAC management routes (standalone)
+	platformGroup := r.Group("/api/v1/platform")
+	platformGroup.Use(authMW)
+	platformGroup.Use(rbacMW)
+	authz.RegisterRoutes(platformGroup, rbacHandler)
+
 	// Register platform monitoring routes (standalone, no module interface needed)
-	monitoringHandler := monitoring.NewHandler(dbManager, l)
-	monitoring.RegisterRoutes(r.Group("/api/v1/platform"), monitoringHandler, authMW, rbacMW)
+	monitoringHandler := monitoring.NewHandler(dbManager, cacheManager, l)
+	monitoring.RegisterRoutes(platformGroup, monitoringHandler, authMW, rbacMW)
 
 	// Register Scalar API Documentation
 	r.GET("/docs", docs.ScalarUIHandler())

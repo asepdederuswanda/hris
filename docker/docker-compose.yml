@@ -2,6 +2,7 @@
 #
 # Services:
 #   - postgres: Platform & tenant database
+#   - pgbouncer: Connection pooler untuk PostgreSQL (recommended untuk multi-tenant)
 #   - redis: Cache & async job queue
 #   - api: Go API server
 #   - asynqmon: Asynq monitoring UI
@@ -16,6 +17,7 @@ networks:
 volumes:
   pgdata:
   redisdata:
+  pgbouncer_config:
 
 services:
   # ===================================================================
@@ -41,6 +43,61 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
+  # ===================================================================
+  # PgBouncer — Connection Pooler
+  # ===================================================================
+  # PgBouncer bertindak sebagai middleware antara API server dan PostgreSQL.
+  # Dengan PgBouncer, API server bisa menggunakan banyak koneksi pendek
+  # tanpa membebani PostgreSQL, karena PgBouncer yang mengelola pool.
+  #
+  # Mode: transaction (recommended untuk aplikasi web)
+  #   - Koneksi di-pool per transaksi, bukan per session
+  #   - Aman untuk prepared statements (dengan flag ignore_startup_parameters)
+  #
+  # Pool sizing untuk multi-tenant:
+  #   default_pool_size=10  → 10 koneksi per tenant database
+  #   max_client_conn=500    → maksimal 500 koneksi client ke PgBouncer
+  #   reserve_pool_size=5    → koneksi cadangan saat pool penuh
+  #   reserve_pool_timeout=3 → timeout sebelum menggunakan cadangan (detik)
+  # ===================================================================
+  pgbouncer:
+    image: edoburu/pgbouncer:latest
+    container_name: hris-pgbouncer
+    restart: unless-stopped
+    networks:
+      - hris-network
+    ports:
+      - "6432:6432"   # PgBouncer default port (PostgreSQL default: 5432)
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: hris
+      DB_PASSWORD: hris_secret
+      DB_NAME: hris_platform
+      AUTH_TYPE: scram-sha-256
+      POOL_MODE: transaction
+      DEFAULT_POOL_SIZE: "10"
+      MAX_CLIENT_CONN: "500"
+      # Reserve pool: matikan di development untuk menghindari koneksi idle.
+      # Di production, set 2-5 untuk mengantisipasi lonjakan traffic.
+      RESERVE_POOL_SIZE: "0"
+      RESERVE_POOL_TIMEOUT: "5.0"
+      # MAX_DB_CONNECTIONS: total koneksi ke PostgreSQL dari PgBouncer.
+      # Di development, 0 = unlimited. Di production, set sesuai kapasitas:
+      #   (jumlah tenant aktif × default_pool_size) + buffer
+      # Contoh: 50 tenant × 10 + 50 buffer = 550
+      MAX_DB_CONNECTIONS: "0"
+      SERVER_IDLE_TIMEOUT: "300"     # 5 menit idle server connection
+      QUERY_TIMEOUT: "30"             # 30 detik timeout query
+      # Ignore startup parameters for prepared statement compatibility
+      IGNORE_STARTUP_PARAMETERS: "extra_float_digits,search_path"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    # Optional: mount custom pgbouncer.ini for advanced configuration
+    # volumes:
+    #   - ./pgbouncer.ini:/etc/pgbouncer/pgbouncer.ini
 
   # ===================================================================
   # Redis Cache & Queue
@@ -75,11 +132,14 @@ services:
     ports:
       - "8080:8080"
     environment:
-      HRIS_DATABASE_PLATFORM_HOST: postgres
-      HRIS_DATABASE_PLATFORM_PORT: 5432
+      # Koneksi via PgBouncer (port 6432) — bukan langsung ke PostgreSQL
+      HRIS_DATABASE_PLATFORM_HOST: pgbouncer
+      HRIS_DATABASE_PLATFORM_PORT: 6432
       HRIS_DATABASE_PLATFORM_DB: hris_platform
       HRIS_DATABASE_PLATFORM_USER: hris
       HRIS_DATABASE_PLATFORM_PASSWORD: hris_secret
+      HRIS_DATABASE_TENANT_HOST: pgbouncer
+      HRIS_DATABASE_TENANT_PORT: 6432
       HRIS_REDIS_HOST: redis
       HRIS_REDIS_PORT: 6379
       HRIS_SERVER_MODE: debug
@@ -88,6 +148,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      pgbouncer:
+        condition: service_started
       redis:
         condition: service_healthy
 

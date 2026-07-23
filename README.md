@@ -70,6 +70,60 @@ Modular monolith backend untuk platform HRIS enterprise dengan arsitektur multi-
 
 ---
 
+## 🔬 Gap Analysis & Rekomendasi Arsitektur (Production Readiness)
+
+Berdasarkan tinjauan arsitektur teknis, berikut area kritis yang harus diterapkan untuk menjamin keandalan sistem pada skala produksi:
+
+### 1. Tenant Lifecycle & Resource Cleanup ✅
+- **Masalah:** Penanganan status tenant (*Suspend*, *Soft Delete*, *Terminate*) berisiko menyisakan koneksi TCP/GORM yang menggantung di memori aplikasi.
+- **Solusi:** ✅ **Sudah diimplementasikan** — `CloseTenantConnection(companyID)` pada `database.Manager` sudah ada dan dipanggil di `DeactivateTenantConnection()`, `RemoveTenantConnection()`, `DropTenantDB()`, dan `CloseAll()`.
+
+### 2. Keamanan Kredensial Database Tenant ✅
+- **Masalah:** Kredensial koneksi database tenant disimpan dalam bentuk *plain text*.
+- **Status:** ✅ **Sudah diimplementasikan**
+  - Package `internal/pkg/crypto/crypto.go` — AES-256-GCM encrypt/decrypt
+  - `SaveTenantConnection()` encrypt password, `FindTenantConnection()` decrypt password
+  - CLI `encrypt-passwords` untuk migrasi data legacy
+  - Key 32-byte hex via env `HRIS_ENCRYPTION_KEY`
+
+### 3. Optimasi Connection Pooling ✅
+- **Masalah:** Alokasi `SetMaxOpenConns(100)` per tenant berisiko menghabiskan `max_connections` host database.
+- **Status:** ✅ **Sudah diimplementasikan** — Platform dan tenant memiliki pool terpisah:
+
+| Pool | max_open | max_idle | max_lifetime | max_idle_time |
+|------|:--------:|:--------:|:------------:|:-------------:|
+| Platform (single DB) | 10 | 5 | 1 jam | — |
+| Tenant (per DB) | 10 | 3 | 30 menit | 5 menit |
+| PgBouncer (optional) | 10/tenant | — | transaction mode | — |
+
+**Pool math:** 50 tenant × 10 open = 500 koneksi (sebelumnya 1.250).
+**PoolStats():** Endpoint `GET /monitoring/pool` untuk inspeksi real-time.
+
+### 4. Penanganan Dialek SQL Migrasi ✅
+- **Masalah:** Eksekusi file `.sql` mentah bermasalah untuk dual-driver (PostgreSQL vs MySQL) karena perbedaan sintaksis DDL.
+- **Status:** ✅ **Sudah diimplementasikan** — Migrasi dipisah per dialect: `migrations/tenant/mysql/` (22 file) dan `migrations/tenant/postgres/` (22 file). Go code menggunakan `TenantRootPath(driver)` untuk seleksi otomatis saat provisioning.
+
+### 5. Sinkronisasi Cache Terdistribusi ✅
+- **Masalah:** Pembaruan *Feature Flags* atau *Permissions* di Redis perlu dikonsumsi konsisten oleh semua instance server.
+- **Status:** ✅ **Sudah diimplementasikan**
+  - Two-tier cache: local `sync.Map` + shared `go-redis/v9`
+  - Pub/Sub invalidation via channel `hris:cache:invalidate`
+  - API: `Get`, `Set`, `SetJSON`, `Invalidate`, `InvalidatePrefix`
+  - Monitoring: `GET /health` mencakup status Redis cache
+  - Config: `cache.default_ttl`, `cache.key_prefix`
+  - **Testing:** ✅ **81 test functions** — 42 unit tests (cache + PubSub) + 8 integration tests (full lifecycle, cross-instance, TTL, concurrent) + 31 benchmarks (throughput, latency, data size). Semua menggunakan `miniredis` — mock Redis in-memory tanpa dependensi eksternal.
+
+### Prioritas Eksekusi
+
+| Area | Komponen | Prioritas | Action Item Utama |
+| :--- | :--- | :---: | :--- |
+| **Security** | Tenant Credentials | ✅ Done | AES-256-GCM encrypt/decrypt via `internal/pkg/crypto/`, CLI `encrypt-passwords` |
+| **Database** | SQL Dialect | ✅ Done | Migrasi dipisah per dialect: `mysql/` dan `postgres/`, dipilih otomatis via `TenantRootPath(driver)` |
+| **Performance** | Connection Pool | ✅ Done | Platform pool (10/5/1jam) & Tenant pool (10/3/30mnt/5mnt) terpisah. PgBouncer + PoolStats() |
+| **Architecture** | Cache Sync | ✅ Done | Distributed cache (local sync.Map + Redis) + Pub/Sub invalidation via `internal/pkg/cache/` |
+
+---
+
 ## ⚙️ Tech Stack
 
 | Layer | Teknologi |
@@ -102,16 +156,19 @@ hris-platform/
 │   │   ├── modules/                  # Tenant Modules
 │   │   │   ├── organization/         #   Organization tree CRUD
 │   │   │   ├── employee/             #   Employee CRUD + 8 sub-modules
-│   │   │   └── jobmanagement/        #   Job Management (18 entities)
-│   │   └── pkg/                      # Shared Kernel
-│   │       ├── config/               # Viper configuration loader
-│   │       ├── database/             # Multi-tenant DB manager
-│   │       ├── driver/               # Shared DB driver type
-│   │       ├── auth/                 # JWT generation & validation
-│   │       ├── middleware/           # Gin middleware
-│   │       ├── router/               # Router setup & module registration
-│   │       ├── logger/               # Zap logger
-│   │       └── module/               # Module SDK interface
+│   │   │   ├── jobmanagement/        #   Job Management (18 entities)
+│   │   │   ├── competency/           #   Competency Management (7 entities)
+│   │   │   └── employeemovement/     #   Employee Movement & Career Management (2 entities)
+│   │   └── pkg/                      # Shared Kernel│       │   ├── config/               # Viper configuration loader
+│       │   ├── database/             # Multi-tenant DB manager
+│       │   ├── driver/               # Shared DB driver type
+│       │   ├── auth/                 # JWT generation & validation
+│       │   ├── authz/                # RBAC enforcer (database-backed) + CRUD API
+│       │   ├── middleware/           # Gin middleware
+│       │   ├── router/               # Router setup & module registration
+│       │   ├── logger/               # Zap logger
+│       │   ├── cache/                # Distributed two-tier cache + Pub/Sub
+│       │   └── module/               # Module SDK interface
 │   ├── config/
 │   │   └── config.yaml               # Base configuration
 │   └── internal/
@@ -291,7 +348,7 @@ GET  /readyz           # Readiness check
 
 ### 🔒 RBAC (Role-Based Access Control)
 
-Platform menggunakan RBAC dengan **4 role** dalam hierarki:
+Platform menggunakan **database-backed RBAC** dengan **4 default role** dalam hierarki:
 
 ```
 super_admin  (full access — platform + tenant)
@@ -300,42 +357,44 @@ super_admin  (full access — platform + tenant)
               └── employee  (tenant view-only)
 ```
 
+**Arsitektur Database-Backed:**
+
+Role, permission, dan role-permission assignments disimpan di tabel platform:
+- `rbac_roles` — daftar role dengan hierarki (parent_id)
+- `rbac_permissions` — daftar permission (resource + action)
+- `rbac_role_permissions` — many-to-many assignment
+
+Saat startup, `NewEnforcerFromDB()`:
+1. **Seed defaults** jika tabel kosong (4 role + 70+ permission)
+2. **Load ke memori** sebagai map[role]map[resource]actions
+3. Siap digunakan untuk Check() — sub-milidetik, tanpa query DB per request
+
+Setelah perubahan role/permission via API, enforcer di-**Reload()** otomatis — tanpa restart server.
+
 **Inheritance behavior:**
 - Jika suatu role **tidak memiliki** policy untuk resource → inherit dari parent
 - Jika suatu role **memiliki** policy (dengan daftar action terbatas) → action yang tidak tercantum = intentional deny
 - Contoh: `employee` punya `organization: view` → `create` akan **denied**, tidak inherit dari `manager`
 
-#### Platform Resources
+#### Default Permission Matrix
 
-| Role | Resource | Actions |
-|------|----------|--------|
-| **super_admin** | `*` (semua) | `*` (semua) |
-| **company_admin** | `company`, `user`, `license` | `view` |
+| Resource | super_admin | company_admin | manager | employee |
+|----------|:-----------:|:-------------:|:-------:|:--------:|
+| `company` | ✅ * | ✅ view | ✅ view (via inherit) | ✅ view (via inherit) |
+| `user` | ✅ * | ✅ view | ✅ view (via inherit) | ✅ view (via inherit) |
+| `module` | ✅ * | ❌ | ✅ view (via inherit) | ✅ view (via inherit) |
+| `license` | ✅ * | ✅ view | ✅ view (via inherit) | ✅ view (via inherit) |
+| `monitoring` | ✅ * | ❌ | ❌ | ❌ |
+| `organization` | ✅ * | ✅ * | ✅ V/C/U | ✅ V |
+| `employee` | ✅ * | ✅ * | ✅ V/C/U | ✅ V |
+| `attendance` | ✅ * | ✅ * | ✅ V | ✅ V |
+| `leave` | ✅ * | ✅ * | ✅ V/C | ✅ V |
+| `payroll` | ✅ * | ✅ * | ❌ | ✅ V |
+| `competency` | ✅ * | ✅ * | ✅ V/C/U | ✅ V |
+| `jobmanagement` | ✅ * | ✅ * | ✅ V/C/U | ❌ |
+| `approval` | ✅ * | ✅ * | ✅ V/C/U | ❌ |
 
-**Detail Permission per Endpoint (Company):**
-
-| Permission | super_admin | company_admin | Deskripsi |
-|-----------|:-----------:|:-------------:|-----------|
-| `company.view` | ✅ | ✅ | List & detail companies |
-| `company.create` | ✅ | ❌ | Create company + provision |
-| `company.update` | ✅ | ❌ | Update company info |
-| `company.delete` | ✅ | ❌ | Soft delete (deactivate) |
-| `company.suspend` | ✅ | ❌ | Suspend + deactivate connection |
-| `company.activate` | ✅ | ❌ | Activate + reactivate connection |
-| `company.terminate` | ✅ | ❌ | Terminate + drop database |
-| `company.backup` | ✅ | ❌ | Backup tenant (Phase 2) |
-| `company.restore` | ✅ | ❌ | Restore tenant (Phase 2) |
-
-#### Tenant Resources
-
-| Role | Organization | Employee | Attendance | Leave | Payroll | Approval |
-|------|:-----------:|:--------:|:----------:|:-----:|:-------:|:--------:|
-| **super_admin** | ✅ * | ✅ * | ✅ * | ✅ * | ✅ * | ✅ * |
-| **company_admin** | ✅ * | ✅ * | ✅ * | ✅ * | ✅ * | ✅ * |
-| **manager** | ✅ V/C/U | ✅ V/C/U | ✅ V | ✅ V/C | ❌ | ✅ V/C/U |
-| **employee** | ✅ V | ✅ V | ✅ V | ✅ V | ✅ V | ❌ |
-
-> * = full access, V = view, C = create, U = update
+> * = all actions, V = view, C = create, U = update
 
 **Permission format:** `resource.action` (contoh: `company.create`, `user.view`)
 
@@ -355,6 +414,23 @@ Endpoint yang tidak memiliki akses akan mengembalikan **403 Forbidden**:
   }
 }
 ```
+
+#### RBAC Management API (super_admin only)
+
+| Method | Endpoint | Deskripsi |
+|--------|----------|-----------|
+| `GET` | `/platform/rbac/roles` | List all roles with permissions |
+| `POST` | `/platform/rbac/roles` | Create a new role |
+| `GET` | `/platform/rbac/roles/:id` | Get role detail |
+| `PUT` | `/platform/rbac/roles/:id` | Update role |
+| `DELETE` | `/platform/rbac/roles/:id` | Delete role (non-system only) |
+| `GET` | `/platform/rbac/permissions` | List all permissions |
+| `POST` | `/platform/rbac/permissions` | Create a new permission |
+| `DELETE` | `/platform/rbac/permissions/:id` | Delete permission (non-system only) |
+| `POST` | `/platform/rbac/roles/:id/permissions` | Assign permission to role |
+| `DELETE` | `/platform/rbac/roles/:id/permissions/:permissionId` | Revoke permission from role |
+
+Semua perubahan role/permission akan otomatis me-reload enforcer (`Service.Sync()` → `Enforcer.Reload()`).
 
 ---
 
@@ -452,6 +528,69 @@ Authorization: Bearer <access_token>
 | `GET` | `/employees/:id` | Get employee with all sub-modules |
 | `PUT` | `/employees/:id` | Update employee |
 | `DELETE` | `/employees/:id` | Delete employee (hard delete) |
+
+**Competency Management (8.1 — Competencies)**
+| Method | Endpoint | Deskripsi |
+|---|---|---|
+| `GET` | `/competencies` | List competencies (pagination) |
+| `POST` | `/competencies` | Create competency |
+| `GET` | `/competencies/:id` | Get competency |
+| `PUT` | `/competencies/:id` | Update competency |
+| `DELETE` | `/competencies/:id` | Delete competency |
+
+**Competency Management (8.2 — Competence Values — legacy)**
+| Method | Endpoint | Deskripsi |
+|---|---|---|
+| `GET` | `/competence-values` | List competence values |
+| `POST` | `/competence-values` | Create competence value |
+| `GET` | `/competence-values/:id` | Get competence value |
+| `PUT` | `/competence-values/:id` | Update competence value |
+| `DELETE` | `/competence-values/:id` | Delete competence value |
+
+**Competency Management (8.3 — Competency Values — structured)**
+| Method | Endpoint | Deskripsi |
+|---|---|---|
+| `GET` | `/competency-values` | List competency values |
+| `POST` | `/competency-values` | Create competency value |
+| `GET` | `/competency-values/:id` | Get competency value |
+| `PUT` | `/competency-values/:id` | Update competency value |
+| `DELETE` | `/competency-values/:id` | Delete competency value |
+
+**Competency Management (8.4 — Competency Events)**
+| Method | Endpoint | Deskripsi |
+|---|---|---|
+| `GET` | `/competency-events` | List competency events |
+| `POST` | `/competency-events` | Create competency event |
+| `GET` | `/competency-events/:id` | Get competency event |
+| `PUT` | `/competency-events/:id` | Update competency event |
+| `DELETE` | `/competency-events/:id` | Delete competency event |
+
+**Competency Management (8.5 — Competency Event Targets)**
+| Method | Endpoint | Deskripsi |
+|---|---|---|
+| `GET` | `/competency-event-targets` | List event targets |
+| `POST` | `/competency-event-targets` | Create event target |
+| `GET` | `/competency-event-targets/:id` | Get event target |
+| `PUT` | `/competency-event-targets/:id` | Update event target |
+| `DELETE` | `/competency-event-targets/:id` | Delete event target |
+
+**Competency Management (8.6 — Competency Scores)**
+| Method | Endpoint | Deskripsi |
+|---|---|---|
+| `GET` | `/competency-scores` | List competency scores |
+| `POST` | `/competency-scores` | Create competency score |
+| `GET` | `/competency-scores/:id` | Get competency score (with details) |
+| `PUT` | `/competency-scores/:id` | Update competency score |
+| `DELETE` | `/competency-scores/:id` | Delete competency score |
+
+**Competency Management (8.7 — Competency Score Details)**
+| Method | Endpoint | Deskripsi |
+|---|---|---|
+| `GET` | `/competency-score-details` | List score details by score ID |
+| `POST` | `/competency-score-details` | Create score detail |
+| `GET` | `/competency-score-details/:id` | Get score detail |
+| `PUT` | `/competency-score-details/:id` | Update score detail |
+| `DELETE` | `/competency-score-details/:id` | Delete score detail |
 | `POST` | `/employees/:id/addresses` | Create address (type: MAIN/DOMICILE) |
 | `PUT` | `/employees/:id/addresses/:addressId` | Update address |
 | `DELETE` | `/employees/:id/addresses/:addressId` | Delete address |
@@ -633,6 +772,29 @@ Authorization: Bearer <access_token>
 | `PUT` | `/job-management/competency-groups/:id` | Update competency group |
 | `DELETE` | `/job-management/competency-groups/:id` | Delete competency group |
 
+**Employee Movement & Career Management — Movements**
+| Method | Endpoint | Deskripsi |
+|---|---|---|
+| `GET` | `/employee-movements/movements` | List movements (pagination) |
+| `POST` | `/employee-movements/movements` | Create movement (promotion, demotion, mutation, etc.) |
+| `GET` | `/employee-movements/movements/:id` | Get movement by ID |
+| `PUT` | `/employee-movements/movements/:id` | Update movement (draft only) |
+| `DELETE` | `/employee-movements/movements/:id` | Delete movement (draft only) |
+| `POST` | `/employee-movements/movements/:id/approve` | Approve movement (draft → approved) |
+| `POST` | `/employee-movements/movements/:id/execute` | Execute movement (approved → executed) |
+| `POST` | `/employee-movements/movements/:id/cancel` | Cancel movement (draft or approved only) |
+| `GET` | `/employee-movements/employees/:employeeId/movements` | List movements by employee |
+
+**Employee Movement & Career Management — Contracts**
+| Method | Endpoint | Deskripsi |
+|---|---|---|
+| `GET` | `/employee-movements/contracts` | List contracts (pagination) |
+| `POST` | `/employee-movements/contracts` | Create contract (PKWT/PKWTT/Daily) |
+| `GET` | `/employee-movements/contracts/:id` | Get contract by ID |
+| `PUT` | `/employee-movements/contracts/:id` | Update contract |
+| `DELETE` | `/employee-movements/contracts/:id` | Delete contract |
+| `GET` | `/employee-movements/employees/:employeeId/contracts` | List contracts by employee |
+
 ### Response Format
 
 ```json
@@ -737,9 +899,29 @@ docker run -p 8080:8080 hris-platform:latest
 
 ## 🧪 Testing
 
+### Test Coverage
+
+| Package | Unit Tests | Integration Tests | Benchmarks | Total |
+|---------|:----------:|:-----------------:|:----------:|:----:|
+| `internal/pkg/cache/` | 42 (cache + PubSub) | 8 (full lifecycle, 2-instance Pub/Sub, TTL, concurrent, data types) | 31 (set/get/invalidate/PubSub/concurrent/data size) | **81** |
+| `internal/modules/competency/` | 54 (service 25 + repository 14 + handler 15) | — | — | **54** |
+| `internal/pkg/authz/` | **80+** (enforcer 26 + repository 22 + service 20 + handler 12) | — | — | **80+** |
+| `internal/modules/employeemovement/` | **58** (service 22 + repository 22 + handler 14) | — | — | **58** |
+
+### Run Tests
+
 ```bash
 # Semua test
 make test
+
+# Cache package specific
+go test ./internal/pkg/cache/ -v
+
+# Benchmarks
+go test ./internal/pkg/cache/ -bench=. -benchmem
+
+# Integration tests
+go test ./internal/pkg/cache/ -run TestCacheIntegration -v
 
 # Dengan coverage
 make coverage     # hasil: coverage.html
@@ -747,6 +929,32 @@ make coverage     # hasil: coverage.html
 # Short test (tanpa integration)
 make test-short
 ```
+
+### Cache Test Details
+
+Semua cache tests menggunakan **miniredis** — pure Go Redis server untuk testing, tanpa perlu Redis asli berjalan.
+
+**Unit tests (cache_test.go + pubsub_test.go):**
+- Cache: Set/Get/Miss/SetJSON/Invalidate/InvalidatePrefix/LocalCache/TTL/Ping/Close/Concurrent/ErrorPath
+- PubSub: Publish/SingleKey/MultipleKeys/HandleMessage/CrossInstance/Concurrent/ErrorPath
+
+**Integration tests (cache_integration_test.go):**
+- Full lifecycle: New → Set → Get → SetJSON → Get (JSON) → Invalidate → Ping → Close
+- Two-instance Pub/Sub invalidation (cross-instance propagation)
+- TTL expiry (Redis + local cache wall clock)
+- Concurrent workflow (20 goroutines mixed Set/Get/SetJSON/Invalidate)
+- Cache miss scenarios (non-existent, invalidated, empty value, idempotent)
+- Large payload (50KB byte-per-byte validation)
+- Complex data types (nested JSON struct)
+- Cross-instance prefix invalidation
+
+**Benchmarks (bench_test.go):**
+- Set/Get latency (hot cache ~21ns, cold cache ~28µs, miss ~27µs)
+- JSON serialization overhead
+- Invalidate/InvalidatePrefix throughput
+- Concurrent operations (RunParallel)
+- Data size comparison (64B → 1MB)
+- PubSub publish/handle throughput
 
 ---
 
@@ -833,7 +1041,7 @@ CREATE TABLE schema_migrations (
 
 ### Migration Files
 
-- `internal/pkg/migrator/migrations/platform/` — 6 platform DDL files
+- `internal/pkg/migrator/migrations/platform/` — 7 platform DDL files (termasuk RBAC roles, permissions, role_permissions)
 - `internal/pkg/migrator/migrations/seeders/` — 1 seeder file
 - `internal/pkg/migrator/migrations/tenant/` — Tenant template (future)
 
@@ -862,13 +1070,12 @@ POST /api/v1/platform/companies
    ├── b. Connect sebagai superuser (root@localhost)
    ├── c. Buat database tenant (CREATE DATABASE IF NOT EXISTS)
    ├── d. Simpan TenantConnection ke platform DB (ID = companyID)
-   ├── e. Connect ke tenant DB via GORM
-   └── f. Jalankan 11 tenant SQL migrations (106 tables)
+   ├── e. Connect ke tenant DB via GORM    └── f. Jalankan 12 tenant SQL migrations (108 tables)
 5. Jika provisioning berhasil → company status: active
 6. Jika provisioning gagal → company status: suspended (data tetap tersimpan)
 ```
 
-### Tenant Migration Files (11 files → 106 tables)
+### Tenant Migration Files (12 files → 108 tables)
 
 | File | Isi |
 |------|-----|
@@ -955,7 +1162,7 @@ POST /api/v1/platform/companies
 | Company status | ✅ **active** | API mengembalikan `status: "active"` |
 | Tenant database | ✅ Created | `hris_final-provision-test` |
 | Tenant connection | ✅ Saved | Record di `tenant_connections` tersimpan |
-| Migrations | ✅ **11 files** | 001 → 011 sukses semua |
+| Migrations | ✅ **12 files** | 001 → 012 sukses semua |
 | Total tables | ✅ **106 tables** | Setiap migrasi menciptakan tabel sesuai DDL |
 | Server log | ✅ Clean | "Tenant provisioning completed successfully" |
 
@@ -987,6 +1194,34 @@ POST /api/v1/platform/companies
 
 ---
 
+## ✅ Module Completion Status
+
+### Modul Inti (Completed ✅)
+
+| Modul | Status | Detail |
+|-------|:------:|--------|
+| **Platform & Tenant Management** | ✅ **Completed** | Provisioning DB multi-tenant, isolasi database, switching context tenant, lifecycle management (Suspend/Activate/Terminate) |
+| **Organization Management** | ✅ **Completed** | Multi-Company Architecture, Dynamic Department Hierarchy (Adjacency List), Location & Geofencing Zones, Organization Summary |
+| **Employee Management** | ✅ **Completed** | Data personal, kontak, alamat, keluarga, pendidikan, dokumen, riwayat kerja, rekening/pajak, 8 sub-modules |
+| **Job Management** | ✅ **Completed** | 18 GORM entities: Titles, Subs, Values, Objectives, Identifications, Responsibilities, Education Experiences, HR/Operational Authorities, Working Activities/Risks, Relationships, Subordinate Controls, Assets, Financials, Potency Competencies, Scores, Competency Groups |
+| **Competency Management** | ✅ **Completed** | 7 GORM entities: Competencies, CompetenceValues (legacy), CompetencyValues (structured), CompetencyEvents, CompetencyEventTargets, CompetencyScores, CompetencyScoreDetails |
+| **RBAC Management (Database-Backed)** | ✅ **Completed** | 4 default roles with hierarchy, 13 seeded resources (70+ permissions), CRUD API (10 endpoints), enforcer auto-reload, **80+ unit tests** |
+| **Employee Movement & Career Management** | ✅ **Completed** | 2 entities (EmployeeMovement, EmployeeContract) with 8 movement types, contract extension chain, 3-step approval flow (draft→approved→executed), **58 unit tests**, 15 OpenAPI endpoints |
+
+### Modul Operasional & Siklus Karier (Planned 🗓️)
+
+| Modul | Prioritas | Scope |
+|-------|:---------:|-------|
+| **Organization History, Versioning & Cloning** | 🟢 High | Change Capture, Full Structure Cloning DRAFT, Version Audit Trail |
+| **Time & Attendance** | 🟢 High | Presensi, penjadwalan shift, lembur (overtime), kalkulasi keterlambatan |
+| **Leave & Time Off** | 🟢 High | Pengajuan cuti/sakit/izin, kuota tahunan, multi-level approval |
+| **Payroll & Compensation Engine** | 🟢 High | Kalkulasi gaji, tunjangan/potongan, PPh 21, BPJS, slip gaji digital |
+| **Performance Management** | 🟡 Medium | KPI, OKR, review 360 terintegrasi Job Management & Competency |
+| **Reimbursement & Claim** | 🟡 Medium | Klaim kesehatan & operasional dinas |
+| **Recruitment & Onboarding (ATS)** | 🟡 Medium | Kandidat, alur seleksi, otomatisasi onboarding |
+
+---
+
 ## ✅ Completed Work
 
 ### 📄 Documentation
@@ -1011,6 +1246,14 @@ POST /api/v1/platform/companies
 | ✅ | `internal/pkg/router/` | `router.go` | Router setup & module registration |
 | ✅ | `internal/pkg/logger/` | `logger.go` | Zap structured logger |
 | ✅ | `internal/pkg/module/` | `module.go` | Module SDK interface & registration |
+| ✅ | `internal/pkg/cache/` | `cache.go`, `pubsub.go` | Distributed two-tier cache (local sync.Map + Redis) + Pub/Sub invalidation |
+| ✅ | `internal/pkg/cache/` (tests) | `cache_test.go`, `pubsub_test.go`, `bench_test.go`, `cache_integration_test.go` | **42 unit tests + 8 integration tests + 31 benchmarks** — test coverage with miniredis |
+| ✅ | `internal/pkg/authz/` | `rbac.go`, `model.go`, `repository.go`, `service.go`, `handler.go`, `routes.go` | Database-backed RBAC: 4 roles with hierarchy, 70+ seeded permissions, enforcer with auto-reload |
+| ✅ | `internal/pkg/authz/` (tests) | `helpers_test.go`, `rbac_test.go`, `repository_test.go`, `service_test.go`, `handler_test.go` | **80+ unit tests** — enforcer DB loading (26) + repository (22) + service (20) + handler (12) with SQLite in-memory |
+| ✅ | `internal/modules/competency/` | `model.go`, `dto.go`, `repository.go`, `service.go`, `handler.go`, `routes.go`, `module.go` | Competency Management — 7 entities full CRUD + auto-migrate + Module SDK |
+| ✅ | `internal/modules/competency/` (tests) | `helpers_test.go`, `service_test.go`, `repository_test.go`, `handler_test.go` | **54 unit tests** — service (25) + repository (14) + handler (15) tests with SQLite in-memory |
+| ✅ | `internal/modules/employeemovement/` | `model.go`, `dto.go`, `repository.go`, `service.go`, `handler.go`, `routes.go`, `module.go` | Employee Movement & Career Management — 2 entities (movements + contracts), 8 movement types, 3-step approval flow, contract chain |
+| ✅ | `internal/modules/employeemovement/` (tests) | `helpers_test.go`, `service_test.go`, `repository_test.go`, `handler_test.go` | **58 unit tests** — service (22) + repository (22) + handler (14) tests with SQLite in-memory |
 
 ### 🏢 Platform Module — Company
 
@@ -1161,15 +1404,29 @@ gorm.io/gorm v1.30.0                      # ORM
 | # | Item | Files |
 |---|------|-------|
 | ✅ | Job Management model (18 GORM entities with UUID hooks) | `internal/modules/jobmanagement/model.go` |
-| ✅ | Full CRUD for all 18 entities (Titles, Subs, Values, Objectives, Identifications, Responsibilities, Education Experiences, HR Authorities, Operational Authorities, Working Activities, Working Risks, Relationships, Subordinate Controls, Assets, Financials, Potency Competencies, Scores, Competency Groups) | `handler.go`, `service.go`, `repository.go` |
+| ✅ | Full CRUD for all 18 entities | `handler.go`, `service.go`, `repository.go` |
 | ✅ | Request/Response DTOs with validation for all 18 entities | `dto.go` |
 | ✅ | Paginated List responses for list endpoints | `service.go` |
 | ✅ | Routes registration (36+ endpoints) | `routes.go` |
 | ✅ | Module registration (Module SDK compliance) | `module.go` |
 | ✅ | Context-driven tenant DB resolver | `module.go` |
-| ✅ | SQLite-integrated unit tests (74 tests: 22 repository + 29 service + 11 handler + 3 route + 9 integration) | `*_test.go` |
+| ✅ | SQLite-integrated unit tests (74 tests) | `*_test.go` |
 | ✅ | OpenAPI 3.0 documentation (35 schemas + 36 endpoints) | `internal/pkg/docs/openapi.json` |
 | ✅ | RBAC permission: `jobmanagement.*` for company_admin | `internal/pkg/authz/rbac.go` |
+
+### 🏛️ Tenant Module — Competency Management ✅
+
+| # | Item | Files |
+|---|------|-------|
+| ✅ | Competency model (7 GORM entities with UUID hooks) | `internal/modules/competency/model.go` |
+| ✅ | Full CRUD for all 7 entities: Competencies, CompetenceValues (legacy), CompetencyValues (structured), CompetencyEvents, CompetencyEventTargets, CompetencyScores, CompetencyScoreDetails | `handler.go`, `service.go`, `repository.go` |
+| ✅ | Request/Response DTOs with validation (required, oneof, max) | `dto.go` |
+| ✅ | Paginated List responses for all list endpoints | `service.go` |
+| ✅ | Routes registration (35 endpoints) | `routes.go` |
+| ✅ | Module registration (Module SDK compliance) | `module.go` |
+| ✅ | Context-driven tenant DB resolver | `module.go` |
+| ✅ | AutoMigrate for 7 models during tenant provisioning | `module.go` |
+| ✅ | SQLite-integrated unit tests (54 tests: 25 service + 14 repository + 15 handler) — covers all 7 entities with CRUD + edge cases (invalid UUID, not found, pagination, validation errors) | `*_test.go` |
 
 ### Build Status
 
@@ -1190,20 +1447,34 @@ $ go build ./...  # ✅ Berhasil
 - ✅ Docker & CI/CD setup
 - ✅ Multi-database driver support (PostgreSQL + MySQL)
 - ✅ Environment configuration (.env)
-- ✅ Tenant Provisioning Engine (11 migrations → 106 tables, end-to-end verified)
+- ✅ Tenant Provisioning Engine (12 migrations → 108 tables, end-to-end verified)
+- ✅ RBAC Authorization Engine (role hierarchy, resource-action policy)
+- ✅ SQL Migration Runner (Up/Down/DownTo rollback, embedded SQL files)
+- ✅ Tenant Lifecycle Management (Suspend/Activate/Terminate + connection cleanup)
 
 ### Phase 2: Tenant Core Modules ✅
 - ✅ Employee Module (full CRUD + 8 sub-modules: addresses, emergency contacts, families, educations, experiences, documents, insurances, employments)
 
-### Phase 3: Payroll & Complex
+### Phase 3: Payroll & Complex ✅
 - ✅ **Job Management Module** (16+ models, 18 GORM entities, full CRUD + scoring) -- [Selesai 22 Juli 2026]
+- 🗄️ **Competency Management** (DB Schema Only — 008_competency.sql, Go module belum diimplementasi)
 - ⬜ Payroll Module (calculator, PPh21, BPJS)
-- ⬜ Competency Module
 
-### Phase 4: Operations
-- ⬜ Attendance & Leave Modules
-- ⬜ Approval Module (multi-step workflow)
-- ⬜ Frontend Integration (Vue 3 + PrimeVue)
+### Phase 4: Operations & Career ✅
+- ✅ **Employee Movement & Career Management** (Promosi/Demosi, PKWT, Pensiun/PHK) — [Selesai 23 Juli 2026]
+- 🗓️ Time & Attendance (presensi, shift, lembur)
+- 🗓️ Leave & Time Off (cuti, izin, sakit, multi-level approval)
+- 🗓️ Payroll & Compensation Engine (gaji, PPh 21, BPJS)
+- 🗓️ Performance Management (KPI, OKR, review 360)
+- ⬜ Reimbursement & Claim
+- ⬜ Recruitment & Onboarding (ATS)
+
+### Production Readiness 🎯
+- ✅ AES-256-GCM encryption untuk kredensial tenant DB (`internal/pkg/crypto/`, CLI `encrypt-passwords`)
+- ⬜ Connection Pool optimization (10-20 per tenant + PgBouncer)
+- ✅ SQL dialect separation (PostgreSQL vs MySQL migrations) — 22 file per dialect, auto-select via `TenantRootPath(driver)`
+- ✅ Redis Pub/Sub untuk distributed cache invalidation (`internal/pkg/cache/` — two-tier + Pub/Sub)
+- ⬜ Frontend Implementationtegration (Vue 3 + PrimeVue)
 
 ### Phase 5: Polish
 - ⬜ E2E Testing (Playwright)

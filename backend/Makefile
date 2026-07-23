@@ -10,7 +10,7 @@
 # make seed        - Run seeders
 # make coverage    - Run tests with coverage
 
-.PHONY: build build-installer run run-hot test test-verbose test-short test-pkg test-employee test-organization coverage cover-view cover-func lint vet migrate seed docker docker-compose-up docker-compose-down tidy clean help
+.PHONY: build build-installer run run-hot test test-verbose test-short test-pkg test-employee test-organization test-cache test-cache-quick test-cache-integration test-cache-error bench-cache bench-cache-compare coverage cover-view cover-func lint vet migrate seed docker docker-compose-up docker-compose-down tidy clean help
 
 BUILD_DIR := ./bin
 BINARY := $(BUILD_DIR)/server
@@ -65,6 +65,31 @@ test-employee:
 test-organization:
 	@echo "Running organization module tests..."
 	@go test -v -count=1 ./internal/modules/organization/...
+
+test-cache:
+	@echo "Running ALL cache package tests (unit + integration)..."
+	@go test -v -count=1 -timeout 120s ./internal/pkg/cache/...
+
+test-cache-quick:
+	@echo "Running all cache tests except integration..."
+	@go test -v -count=1 -timeout 60s -run '^(TestCache_|TestPubSub_|Benchmark)' ./internal/pkg/cache/...
+
+test-cache-integration:
+	@echo "Running cache integration tests only..."
+	@go test -v -count=1 -timeout 120s -run TestCacheIntegration ./internal/pkg/cache/...
+
+test-cache-error:
+	@echo "Running cache error path tests..."
+	@go test -v -count=1 -timeout 60s -run 'TestCache_New_Invalid|TestCache_New_Empty|TestCache_New_Closed|TestCache_New_Error|TestPubSub_NewPubSub_Invalid|TestPubSub_CallbackNotCalled' ./internal/pkg/cache/...
+
+bench-cache:
+	@echo "Running cache benchmarks..."
+	@go test -bench=. -benchmem -count=1 -timeout 180s -run=^$ ./internal/pkg/cache/...
+
+bench-cache-compare:
+	@echo "Running cache benchmark comparison (2 iterations)..."
+	@go test -bench=. -benchmem -count=2 -timeout 300s -run=^$ ./internal/pkg/cache/... 2>&1 | tee bench-cache-output.log
+	@echo "Benchmark output saved to bench-cache-output.log"
 
 coverage:
 	@echo "Running tests with coverage..."
@@ -147,6 +172,12 @@ help:
 	@echo "test-pkg pkg=   - Run tests for a specific package (e.g. pkg=modules/employee)"
 	@echo "test-employee  - Run employee module tests"
 	@echo "test-organization - Run organization module tests"
+	@echo "test-cache     - Run ALL cache tests (unit + integration)"
+	@echo "test-cache-quick - Run all cache tests except integration"
+	@echo "test-cache-integration - Run cache integration tests only"
+	@echo "test-cache-error - Run cache error path tests"
+	@echo "bench-cache    - Run cache benchmarks"
+	@echo "bench-cache-compare - Run 2 benchmark iterations + save to log"
 	@echo "coverage       - Run tests with coverage report (HTML)"
 	@echo "cover-view     - Open existing coverage report"
 	@echo "cover-func     - Show coverage by function"

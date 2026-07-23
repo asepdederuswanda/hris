@@ -3,7 +3,8 @@
 **Dokumen:** Architecture Design Document (Step 3 - Blueprint Roadmap)
 **Tanggal:** 22 Juli 2026
 **Versi:** 1.6
-**Status:** ✅ Scaffolding Selesai + Multi-Database Driver Support + MySQL UUID Compatibility + RBAC Authorization + SQL Migration Runner (Up/Down Rollback) + Tenant Provisioning End-to-End (MySQL) Verified + Employee Module ✅
+**Status:** ✅ Foundation + Multi-Database Driver Support + MySQL UUID Compatibility + RBAC Authorization + SQL Migration Runner (Up/Down Rollback) + Tenant Provisioning End-to-End (MySQL) Verified + Employee Module ✅ + Job Management ✅ + Tenant Lifecycle Management ✅
+**Catatan:** Competency Management: 🗄️ DB Schema Only (DDL migration tersedia, Go module belum diimplementasi)
 
 ---
 
@@ -23,6 +24,8 @@
 12. [Multi-Database Driver Support](#13-multi-database-driver-support)
     12.1. [MySQL UUID Compatibility](#139-mysql-uuid-compatibility)
 13. [Module Migration Plan](#14-module-migration-plan)
+14. [Organization History, Versioning & Cloning](#15-organization-history-versioning--cloning)
+15. [Gap Analysis & Production Readiness](#16-gap-analysis--production-readiness)
 
 ---
 
@@ -2049,6 +2052,112 @@ Semua model sudah memiliki `BeforeCreate` hook yang memanggil `uuid.New()` dari 
 
 ## 14. Module Migration Plan
 
+### Migration Priority Matrix
+
+| Area | Komponen | Prioritas | Action Item Utama |
+| :--- | :--- | :---: | :--- |
+| **Security** | Tenant Credentials | ✅ Done | AES-256-GCM encrypt/decrypt via `internal/pkg/crypto/`, CLI `encrypt-passwords` |
+| **Database** | SQL Dialect | ✅ Done | Migrasi dipisah per dialect: `mysql/` dan `postgres/`, dipilih otomatis via `TenantRootPath(driver)` |
+| **Resource** | Lifecycle Tenant | 🟡 Medium | Implementasi `CloseTenantDB()` saat tenant non-aktif |
+| **Performance** | Connection Pool | ✅ Done | Platform pool (10/5/1jam) & Tenant pool (10/3/30mnt/5mnt) terpisah. PgBouncer + PoolStats() |
+| **Architecture** | Modul Operasional & Career | 🟢 Low | Inisiasi desain skema database modul Employee Movement, Time & Attendance, Payroll |
+
+---
+
+## 15. Organization History, Versioning & Cloning
+
+### Fitur Baru — Organization Management
+
+Organization Management telah diperluas dengan kemampuan versioning dan cloning untuk mendukung simulasi reorganisasi sebelum dipublikasikan.
+
+#### Partial & Total Change Capture
+- **Skala Kecil:** Pencatatan delta perubahan individu (audit log) — setiap perubahan pada entitas organisasi dicatat dengan detail sebelum/sesudah.
+- **Skala Besar:** Reorganisasi massal dengan perubahan level/struktur dicatat sebagai satu kesatuan transaksi.
+
+#### Full Structure Cloning
+- **Deep Copy:** Seluruh pohon struktur organisasi (termasuk sub-entitas) dapat di-*clone* ke versi **DRAFT**.
+- **Simulasi:** User dapat melakukan modifikasi pada versi DRAFT tanpa mempengaruhi struktur aktif.
+- **Effective-Date Activation:** Perubahan DRAFT dapat dipublikasikan dengan tanggal efektif tertentu.
+
+#### Version Audit Trail
+- **Versioning:** Setiap perubahan signifikan pada struktur organisasi disimpan sebagai versi baru.
+- **Diff Comparison:** Perbandingan (*diff*) antar versi arsitektur organisasi secara historis.
+- **Rollback:** Kemampuan untuk kembali ke versi sebelumnya jika diperlukan.
+
+---
+
+## 16. Gap Analysis & Production Readiness
+
+Berdasarkan tinjauan arsitektur teknis, beberapa area kritis berikut harus diterapkan untuk menjamin keandalan sistem pada skala produksi:
+
+### 16.1 Tenant Lifecycle & Resource Cleanup ✅
+
+**Masalah:** Penanganan status tenant (*Suspend*, *Soft Delete*, *Terminate*) berisiko menyisakan koneksi TCP/GORM yang menggantung di memori aplikasi (`Manager.tenants map`).
+
+**Status:** ✅ **Sudah diimplementasikan** — `CloseTenantConnection(companyID string)` sudah ada di `database.Manager` dan dipanggil di `DeactivateTenantConnection()`, `RemoveTenantConnection()`, `DropTenantDB()`, dan `CloseAll()`.
+
+### 16.2 Keamanan Kredensial Database Tenant 🔴 High
+
+**Masalah:** Kredensial koneksi database tenant pada skema Platform/Master tidak boleh disimpan dalam bentuk *plain text*.
+
+**Solusi:** Terapkan enkripsi simetris **AES-256-GCM** pada layer *repository* sebelum kolom `TenantConnection.Password` disimpan atau dibaca dari database master. Kunci enkripsi dikelola melalui *environment variable* `HRIS_ENCRYPTION_KEY`.
+
+### 16.3 Optimasi Connection Pooling ✅ Done
+
+**Masalah:** Alokasi koneksi maksimum yang terlalu besar per tenant (misal `SetMaxOpenConns(100)`) berisiko menghabiskan kuota `max_connections` pada host database jika jumlah tenant meningkat.
+
+**Status:** ✅ **Sudah diimplementasikan** — Platform dan tenant memiliki pool terpisah.
+
+**Arsitektur Pool:**
+```
+Platform Pool (single DB): max_open=10  max_idle=5  lifetime=1jam
+Tenant Pool (per DB tenant): max_open=10  max_idle=3  lifetime=30mnt  idle=5mnt
+PgBouncer (opsional): mode=transaction  pool=10/tenant  max_client=500
+```
+
+**Pool Math:**
+| Skenario | Platform | 1 Tenant | 10 Tenants | 50 Tenants |
+|----------|:--------:|:--------:|:----------:|:----------:|
+| Before | 25 open | 25 open | 250 open | 1,250 open |
+| After | 10 open | 10 open | 100 open | 500 open |
+| +PgBouncer | — | — | 10 ke PG | 50 ke PG |
+
+**Endpoint:** `GET /monitoring/pool` — PoolStats() untuk inspeksi real-time.
+
+### 16.4 Penanganan Dialek SQL Migrasi ✅
+
+**Masalah:** Penggunaan eksekusi file `.sql` mentah memerlukan penanganan khusus jika sistem mendukung dual-driver (PostgreSQL & MySQL) karena perbedaan sintaksis DDL (seperti `UUID` vs `VARCHAR/CHAR(36)`).
+
+**Status:** ✅ **Sudah diimplementasikan** — Direktori migrasi dipisah: `migrations/tenant/mysql/` (22 file MySQL-optimized) dan `migrations/tenant/postgres/` (22 file PostgreSQL-optimized). Go code menggunakan `TenantRootPath(driver)` untuk memilih dialect yang sesuai secara otomatis saat tenant provisioning.
+
+### 16.5 Sinkronisasi Cache Terdistribusi ✅ Done
+
+**Masalah:** Pembaruan *Feature Flags* atau *Permissions* di Redis pada satu instance Go server perlu dikonsumsi secara konsisten oleh instance lainnya pada lingkungan *multi-node deployment*.
+
+**Status:** ✅ **Sudah diimplementasikan**
+
+**Package:** `internal/pkg/cache/` — `cache.go` + `pubsub.go`
+- **Local cache:** `sync.Map` dengan TTL (sub-milidetik)
+- **Shared store:** `go-redis/v9` (shared antar instance)
+- **Pub/Sub invalidation:** Channel `hris:cache:invalidate`. Publish saat data berubah → semua instance evict local cache.
+- **API:** `Get`, `Set`, `SetJSON`, `Invalidate`, `InvalidatePrefix`
+- **Config:** `cache.default_ttl` (default 300s), `cache.key_prefix`
+- **Monitoring:** `GET /health` menyertakan status Redis cache via `Ping()`
+
+### Priority Matrix
+
+| Area | Komponen | Prioritas | Action Item Utama |
+| :--- | :--- | :---: | :--- |
+| **Security** | Tenant Credentials | ✅ Done | AES-256-GCM encrypt/decrypt via `internal/pkg/crypto/`, CLI `encrypt-passwords` |
+| **Database** | SQL Dialect | ✅ Done | Migrasi dipisah per dialect: `mysql/` dan `postgres/`, dipilih otomatis via `TenantRootPath(driver)` |
+| **Performance** | Connection Pool | ✅ Done | Platform pool (10/5/1jam) & Tenant pool (10/3/30mnt/5mnt) terpisah. PgBouncer + PoolStats() |
+| **Architecture** | Cache Sync | ✅ Done | Distributed cache (local sync.Map + Redis) + Pub/Sub invalidation via `internal/pkg/cache/` |
+| **Architecture**| Modul Operasional & Career | 🟢 Low | Inisiasi desain skema database modul *Employee Movement*, *Time & Attendance*, dan *Payroll* |
+
+---
+
+*Document Version: 1.6*  
+*Status: ✅ Foundation + Tenant Provisioning + Employee + Job Management Completed. Competency Management: 🗄️ DB Schema Only. Production Readiness items in progress.*
 ### 14.1 Migration Phases
 
 Berdasarkan analisis existing codebase, migrasi dilakukan bertahap:

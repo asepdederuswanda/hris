@@ -12,15 +12,29 @@ import (
 	"github.com/inthros/hris-platform/internal/pkg/migrator"
 )
 
+// TenantManager mendefinisikan interface untuk operasi lifecycle tenant
+// yang digunakan oleh Company Service. Memungkinkan mocking di unit test
+// tanpa memerlukan koneksi database nyata.
+type TenantManager interface {
+	Driver() string
+	ProvisionTenant(companyID, dbName, dbUser, dbPassword, driverType string) (*database.TenantConnection, error)
+	SaveTenantConnection(conn *database.TenantConnection) error
+	TenantDB(companyID string) (*gorm.DB, error)
+	DeactivateTenantConnection(companyID string) error
+	DropTenantDB(companyID string) error
+	RemoveTenantConnection(companyID string) error
+	ActivateTenantConnection(companyID string) error
+}
+
 // Service untuk business logic Company.
 type Service struct {
 	repo      *Repository
-	dbManager *database.Manager
+	dbManager TenantManager
 	logger    *zap.Logger
 }
 
 // NewService membuat Service baru.
-func NewService(repo *Repository, dbManager *database.Manager, logger *zap.Logger) *Service {
+func NewService(repo *Repository, dbManager TenantManager, logger *zap.Logger) *Service {
 	return &Service{
 		repo:      repo,
 		dbManager: dbManager,
@@ -114,9 +128,10 @@ func (s *Service) provisionTenant(company *Company) error {
 		return fmt.Errorf("failed to connect to tenant database: %w", err)
 	}
 
-	// 5. Jalankan tenant SQL migrations
+	// 5. Jalankan tenant SQL migrations (pilih dialect sesuai driver)
 	s.logger.Info("Running tenant SQL migrations...")
-	tenantMigrator := migrator.New(tenantDB, s.logger, migrator.MigrationsFS, migrator.RootTenant)
+	tenantRoot := migrator.TenantRootPath(s.dbManager.Driver())
+	tenantMigrator := migrator.New(tenantDB, s.logger, migrator.MigrationsFS, tenantRoot)
 	if err := tenantMigrator.Up(); err != nil {
 		return fmt.Errorf("tenant migration failed: %w", err)
 	}
@@ -131,7 +146,8 @@ func (s *Service) provisionTenant(company *Company) error {
 // MigrateTenantDB menjalankan migration pada tenant database yang sudah ada.
 // Digunakan untuk upgrade schema tenant yang sudah ada.
 func (s *Service) MigrateTenantDB(companyID string, db *gorm.DB) error {
-	tenantMigrator := migrator.New(db, s.logger, migrator.MigrationsFS, migrator.RootTenant)
+	tenantRoot := migrator.TenantRootPath(s.dbManager.Driver())
+	tenantMigrator := migrator.New(db, s.logger, migrator.MigrationsFS, tenantRoot)
 	if err := tenantMigrator.Up(); err != nil {
 		return fmt.Errorf("tenant migration failed for company %s: %w", companyID, err)
 	}

@@ -3,7 +3,7 @@
   "info": {
     "title": "HRIS Platform API",
     "description": "API untuk HRIS Platform Enterprise — modular monolith dengan multi-tenant architecture. Mendukung PostgreSQL dan MySQL.\n\n## Authentication\n\nSemua endpoint tenant (prefixed `/api/v1/tenant`) memerlukan JWT Bearer Token:\n```\nAuthorization: Bearer <access_token>\n```\n\nUntuk mendapatkan token, login via platform endpoint.\n\n## RBAC (Role-Based Access Control)\n\nPlatform menggunakan RBAC dengan 2 role:\n\n| Role | Akses |\n|------|-------|\n| **super_admin** | Akses penuh ke semua resource platform |\n| **company_admin** | Akses view-only ke company, user, license miliknya sendiri |\n\nEndpoint yang memerlukan proteksi akan mengembalikan **403 Forbidden** jika role tidak memiliki permission yang sesuai.\n\n### Permission Format\n\nSetiap endpoint memiliki permission requirement dalam format `resource.action`:\n```\ncompany.view, company.create, company.update, company.delete\ncompany.suspend, company.activate, company.terminate, company.backup, company.restore\nuser.view, user.create, user.update\nmodule.view, module.create, module.update, module.activate, module.deactivate\nlicense.view, license.create, license.update\nmonitoring.view\nemployee.address.create, employee.address.update, employee.address.delete\nemployee.contact.create, employee.contact.update, employee.contact.delete\nemployee.family.create, employee.family.update, employee.family.delete\nemployee.education.create, employee.education.update, employee.education.delete\nemployee.experience.create, employee.experience.update, employee.experience.delete\nemployee.document.create, employee.document.update, employee.document.delete\nemployee.insurance.create, employee.insurance.update, employee.insurance.delete\nemployee.employment.create, employee.employment.update, employee.employment.delete\n```\n\n### Company Lifecycle Actions\n\n| Action | Endpoint | DB Cleanup |\n|--------|----------|------------|\n| **Provision** | `POST /companies` | ✅ Create DB + 106 tables |\n| **Suspend** | `POST /companies/:id/suspend` | ✅ Deactivate connection |\n| **Activate** | `POST /companies/:id/activate` | ✅ Reactivate connection |\n| **Soft Delete** | `DELETE /companies/:id` | ✅ Deactivate connection |\n| **Terminate** | `POST /companies/:id/terminate` | ✅ Drop DB + remove connection |\n\n## Base URL\n\n```\nDevelopment: http://localhost:8080\n```",
-    "version": "1.4.0",
+    "version": "1.5.0",
     "contact": {
       "name": "HRIS Platform Team",
       "email": "dev@hris-platform.com"
@@ -55,6 +55,18 @@
     {
       "name": "Tenant: Job Management",
       "description": "Job analysis management including titles, values, objectives, responsibilities, competencies, and scoring"
+    },
+    {
+      "name": "Tenant: Competency Management",
+      "description": "Competency management including master competencies, values, events, targets, scores, and score details"
+    },
+    {
+      "name": "Platform: RBAC Management",
+      "description": "Role-based access control management for roles, permissions, and role-permission assignments"
+    },
+    {
+      "name": "Tenant: Employee Movement & Career Management",
+      "description": "Employee career movements management including promotions, demotions, mutations, contract extensions (PKWT), retirements, offboarding, and employment contract management"
     }
   ],
   "paths": {
@@ -1855,6 +1867,860 @@
         "security": [{ "bearerAuth": [] }],
         "responses": { "200": { "description": "Competency group deleted" } }
       }
+    },
+    "/api/v1/tenant/competency/competencies": {
+      "get": {
+        "tags": ["Tenant: Competency Management"],
+        "summary": "List competencies with pagination",
+        "operationId": "listCompetencies",
+        "parameters": [
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
+          { "name": "per_page", "in": "query", "schema": { "type": "integer", "default": 20 } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "responses": { "200": { "description": "Paginated list of competencies" } }
+      },
+      "post": {
+        "tags": ["Tenant: Competency Management"],
+        "summary": "Create a new competency master",
+        "operationId": "createCompetency",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreateCompetencyRequest" }
+            }
+          }
+        },
+        "responses": { "201": { "description": "Competency created" }, "400": { "description": "Validation error" } }
+      }
+    },
+    "/api/v1/tenant/competency/competencies/{id}": {
+      "get": {
+        "tags": ["Tenant: Competency Management"],
+        "summary": "Get competency by ID",
+        "operationId": "getCompetency",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "responses": { "200": { "description": "Competency details" }, "404": { "description": "Not found" } }
+      },
+      "put": {
+        "tags": ["Tenant: Competency Management"],
+        "summary": "Update competency",
+        "operationId": "updateCompetency",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/UpdateCompetencyRequest" }
+            }
+          }
+        },
+        "responses": { "200": { "description": "Competency updated" } }
+      },
+      "delete": {
+        "tags": ["Tenant: Competency Management"],
+        "summary": "Delete competency",
+        "operationId": "deleteCompetency",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "responses": { "200": { "description": "Competency deleted" } }
+      }
+    },
+    "/api/v1/tenant/competency/competence-values": {
+      "get": {
+        "tags": ["Tenant: Competency Management"],
+        "summary": "List competence values (legacy) with pagination",
+        "operationId": "listCompetenceValues",
+        "parameters": [
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
+          { "name": "per_page", "in": "query", "schema": { "type": "integer", "default": 20 } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "responses": { "200": { "description": "Paginated list of competence values" } }
+      },
+      "post": {
+        "tags": ["Tenant: Competency Management"],
+        "summary": "Create a new competence value (legacy)",
+        "operationId": "createCompetenceValue",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreateCompetenceValueRequest" }
+            }
+          }
+        },
+        "responses": { "201": { "description": "Competence value created" }, "400": { "description": "Validation error" } }
+      }
+    },
+    "/api/v1/tenant/competency/competence-values/{id}": {
+      "get": {
+        "tags": ["Tenant: Competency Management"],
+        "summary": "Get competence value by ID",
+        "operationId": "getCompetenceValue",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "responses": { "200": { "description": "Competence value details" }, "404": { "description": "Not found" } }
+      },
+      "put": {
+        "tags": ["Tenant: Competency Management"],
+        "summary": "Update competence value",
+        "operationId": "updateCompetenceValue",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/UpdateCompetenceValueRequest" }
+            }
+          }
+        },
+        "responses": { "200": { "description": "Competence value updated" } }
+      },
+      "delete": {
+        "tags": ["Tenant: Competency Management"],
+        "summary": "Delete competence value",
+        "operationId": "deleteCompetenceValue",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "responses": { "200": { "description": "Competence value deleted" } }
+      }
+    },
+    "/api/v1/tenant/competency/values": {
+      "get": {
+        "tags": ["Tenant: Competency Management"],
+        "summary": "List competency values (structured) with pagination",
+        "operationId": "listCompetencyValues",
+        "parameters": [
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
+          { "name": "per_page", "in": "query", "schema": { "type": "integer", "default": 20 } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "responses": { "200": { "description": "Paginated list of competency values" } }
+      },
+      "post": {
+        "tags": ["Tenant: Competency Management"],
+        "summary": "Create a new competency value (structured)",
+        "operationId": "createCompetencyValue",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreateCompetencyValueRequest" }
+            }
+          }
+        },
+        "responses": { "201": { "description": "Competency value created" }, "400": { "description": "Validation error" } }
+      }
+    },
+    "/api/v1/tenant/competency/values/{id}": {
+      "get": {
+        "tags": ["Tenant: Competency Management"],
+        "summary": "Get competency value by ID",
+        "operationId": "getCompetencyValue",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "responses": { "200": { "description": "Competency value details" }, "404": { "description": "Not found" } }
+      },
+      "put": {
+        "tags": ["Tenant: Competency Management"],
+        "summary": "Update competency value",
+        "operationId": "updateCompetencyValue",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/UpdateCompetencyValueRequest" }
+            }
+          }
+        },
+        "responses": { "200": { "description": "Competency value updated" } }
+      },
+      "delete": {
+        "tags": ["Tenant: Competency Management"],
+        "summary": "Delete competency value",
+        "operationId": "deleteCompetencyValue",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "responses": { "200": { "description": "Competency value deleted" } }
+      }
+    },
+    "/api/v1/tenant/competency/events": {
+      "get": {
+        "tags": ["Tenant: Competency Management"],
+        "summary": "List competency events with pagination",
+        "operationId": "listCompetencyEvents",
+        "parameters": [
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
+          { "name": "per_page", "in": "query", "schema": { "type": "integer", "default": 20 } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "responses": { "200": { "description": "Paginated list of competency events" } }
+      },
+      "post": {
+        "tags": ["Tenant: Competency Management"],
+        "summary": "Create a new competency event",
+        "operationId": "createCompetencyEvent",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreateCompetencyEventRequest" }
+            }
+          }
+        },
+        "responses": { "201": { "description": "Competency event created" }, "400": { "description": "Validation error" } }
+      }
+    },
+    "/api/v1/tenant/competency/events/{id}": {
+      "get": {
+        "tags": ["Tenant: Competency Management"],
+        "summary": "Get competency event by ID",
+        "operationId": "getCompetencyEvent",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "responses": { "200": { "description": "Competency event details" }, "404": { "description": "Not found" } }
+      },
+      "put": {
+        "tags": ["Tenant: Competency Management"],
+        "summary": "Update competency event",
+        "operationId": "updateCompetencyEvent",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/UpdateCompetencyEventRequest" }
+            }
+          }
+        },
+        "responses": { "200": { "description": "Competency event updated" } }
+      },
+      "delete": {
+        "tags": ["Tenant: Competency Management"],
+        "summary": "Delete competency event",
+        "operationId": "deleteCompetencyEvent",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "responses": { "200": { "description": "Competency event deleted" } }
+      }
+    },
+    "/api/v1/tenant/competency/event-targets": {
+      "get": {
+        "tags": ["Tenant: Competency Management"],
+        "summary": "List competency event targets with pagination",
+        "operationId": "listCompetencyEventTargets",
+        "parameters": [
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
+          { "name": "per_page", "in": "query", "schema": { "type": "integer", "default": 20 } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "responses": { "200": { "description": "Paginated list of competency event targets" } }
+      },
+      "post": {
+        "tags": ["Tenant: Competency Management"],
+        "summary": "Create a new competency event target",
+        "operationId": "createCompetencyEventTarget",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreateCompetencyEventTargetRequest" }
+            }
+          }
+        },
+        "responses": { "201": { "description": "Competency event target created" }, "400": { "description": "Validation error" } }
+      }
+    },
+    "/api/v1/tenant/competency/event-targets/{id}": {
+      "get": {
+        "tags": ["Tenant: Competency Management"],
+        "summary": "Get competency event target by ID",
+        "operationId": "getCompetencyEventTarget",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "responses": { "200": { "description": "Competency event target details" }, "404": { "description": "Not found" } }
+      },
+      "put": {
+        "tags": ["Tenant: Competency Management"],
+        "summary": "Update competency event target",
+        "operationId": "updateCompetencyEventTarget",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/UpdateCompetencyEventTargetRequest" }
+            }
+          }
+        },
+        "responses": { "200": { "description": "Competency event target updated" } }
+      },
+      "delete": {
+        "tags": ["Tenant: Competency Management"],
+        "summary": "Delete competency event target",
+        "operationId": "deleteCompetencyEventTarget",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "responses": { "200": { "description": "Competency event target deleted" } }
+      }
+    },
+    "/api/v1/tenant/competency/scores": {
+      "get": {
+        "tags": ["Tenant: Competency Management"],
+        "summary": "List competency scores with pagination",
+        "operationId": "listCompetencyScores",
+        "parameters": [
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
+          { "name": "per_page", "in": "query", "schema": { "type": "integer", "default": 20 } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "responses": { "200": { "description": "Paginated list of competency scores" } }
+      },
+      "post": {
+        "tags": ["Tenant: Competency Management"],
+        "summary": "Create a new competency score",
+        "operationId": "createCompetencyScore",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreateCompetencyScoreRequest" }
+            }
+          }
+        },
+        "responses": { "201": { "description": "Competency score created" }, "400": { "description": "Validation error" } }
+      }
+    },
+    "/api/v1/tenant/competency/scores/{id}": {
+      "get": {
+        "tags": ["Tenant: Competency Management"],
+        "summary": "Get competency score by ID with details",
+        "operationId": "getCompetencyScore",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "responses": { "200": { "description": "Competency score details with score details" }, "404": { "description": "Not found" } }
+      },
+      "put": {
+        "tags": ["Tenant: Competency Management"],
+        "summary": "Update competency score",
+        "operationId": "updateCompetencyScore",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/UpdateCompetencyScoreRequest" }
+            }
+          }
+        },
+        "responses": { "200": { "description": "Competency score updated" } }
+      },
+      "delete": {
+        "tags": ["Tenant: Competency Management"],
+        "summary": "Delete competency score",
+        "operationId": "deleteCompetencyScore",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "responses": { "200": { "description": "Competency score deleted" } }
+      }
+    },
+    "/api/v1/tenant/competency/scores/{scoreId}/details": {
+      "get": {
+        "tags": ["Tenant: Competency Management"],
+        "summary": "List score details by score ID",
+        "operationId": "listCompetencyScoreDetails",
+        "parameters": [
+          { "name": "scoreId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
+          { "name": "per_page", "in": "query", "schema": { "type": "integer", "default": 20 } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "responses": { "200": { "description": "Paginated list of score details" } }
+      }
+    },
+    "/api/v1/tenant/competency/score-details": {
+      "post": {
+        "tags": ["Tenant: Competency Management"],
+        "summary": "Create a new competency score detail",
+        "operationId": "createCompetencyScoreDetail",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreateCompetencyScoreDetailRequest" }
+            }
+          }
+        },
+        "responses": { "201": { "description": "Score detail created" }, "400": { "description": "Validation error" } }
+      }
+    },
+    "/api/v1/tenant/competency/score-details/{id}": {
+      "get": {
+        "tags": ["Tenant: Competency Management"],
+        "summary": "Get score detail by ID",
+        "operationId": "getCompetencyScoreDetail",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "responses": { "200": { "description": "Score detail details" }, "404": { "description": "Not found" } }
+      },
+      "put": {
+        "tags": ["Tenant: Competency Management"],
+        "summary": "Update score detail",
+        "operationId": "updateCompetencyScoreDetail",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/UpdateCompetencyScoreDetailRequest" }
+            }
+          }
+        },
+        "responses": { "200": { "description": "Score detail updated" } }
+      },
+      "delete": {
+        "tags": ["Tenant: Competency Management"],
+        "summary": "Delete score detail",
+        "operationId": "deleteCompetencyScoreDetail",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "responses": { "200": { "description": "Score detail deleted" } }
+      }
+    },
+    "/api/v1/tenant/employee-movements/movements": {
+      "get": {
+        "tags": ["Tenant: Employee Movement & Career Management"],
+        "summary": "List employee movements with pagination",
+        "operationId": "listMovements",
+        "parameters": [
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
+          { "name": "per_page", "in": "query", "schema": { "type": "integer", "default": 20 } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "responses": { "200": { "description": "Paginated list of employee movements" } }
+      },
+      "post": {
+        "tags": ["Tenant: Employee Movement & Career Management"],
+        "summary": "Create a new employee movement (promotion, demotion, mutation, etc.)",
+        "operationId": "createMovement",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreateMovementRequest" }
+            }
+          }
+        },
+        "responses": { "201": { "description": "Employee movement created" }, "400": { "description": "Validation error" } }
+      }
+    },
+    "/api/v1/tenant/employee-movements/movements/{id}": {
+      "get": {
+        "tags": ["Tenant: Employee Movement & Career Management"],
+        "summary": "Get employee movement by ID",
+        "operationId": "getMovement",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "responses": { "200": { "description": "Employee movement details" }, "404": { "description": "Not found" } }
+      },
+      "put": {
+        "tags": ["Tenant: Employee Movement & Career Management"],
+        "summary": "Update employee movement (draft only)",
+        "operationId": "updateMovement",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/UpdateMovementRequest" }
+            }
+          }
+        },
+        "responses": { "200": { "description": "Employee movement updated" } }
+      },
+      "delete": {
+        "tags": ["Tenant: Employee Movement & Career Management"],
+        "summary": "Delete employee movement (draft only)",
+        "operationId": "deleteMovement",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "responses": { "200": { "description": "Employee movement deleted" } }
+      }
+    },
+    "/api/v1/tenant/employee-movements/movements/{id}/approve": {
+      "post": {
+        "tags": ["Tenant: Employee Movement & Career Management"],
+        "summary": "Approve an employee movement (changes status from draft to approved)",
+        "operationId": "approveMovement",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "responses": { "200": { "description": "Movement approved" }, "409": { "description": "Conflict: cannot approve (e.g., not in draft status)" } }
+      }
+    },
+    "/api/v1/tenant/employee-movements/movements/{id}/execute": {
+      "post": {
+        "tags": ["Tenant: Employee Movement & Career Management"],
+        "summary": "Execute an approved employee movement (changes status from approved to executed)",
+        "operationId": "executeMovement",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "responses": { "200": { "description": "Movement executed" }, "409": { "description": "Conflict: cannot execute (e.g., not in approved status)" } }
+      }
+    },
+    "/api/v1/tenant/employee-movements/movements/{id}/cancel": {
+      "post": {
+        "tags": ["Tenant: Employee Movement & Career Management"],
+        "summary": "Cancel an employee movement (draft or approved only)",
+        "operationId": "cancelMovement",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "responses": { "200": { "description": "Movement cancelled" }, "409": { "description": "Conflict: cannot cancel (e.g., already executed)" } }
+      }
+    },
+    "/api/v1/tenant/employee-movements/employees/{employeeId}/movements": {
+      "get": {
+        "tags": ["Tenant: Employee Movement & Career Management"],
+        "summary": "List movements by employee ID",
+        "operationId": "listMovementsByEmployee",
+        "parameters": [
+          { "name": "employeeId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
+          { "name": "per_page", "in": "query", "schema": { "type": "integer", "default": 20 } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "responses": { "200": { "description": "Paginated list of movements for the employee" } }
+      }
+    },
+    "/api/v1/tenant/employee-movements/contracts": {
+      "get": {
+        "tags": ["Tenant: Employee Movement & Career Management"],
+        "summary": "List employee contracts with pagination",
+        "operationId": "listContracts",
+        "parameters": [
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
+          { "name": "per_page", "in": "query", "schema": { "type": "integer", "default": 20 } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "responses": { "200": { "description": "Paginated list of employee contracts" } }
+      },
+      "post": {
+        "tags": ["Tenant: Employee Movement & Career Management"],
+        "summary": "Create a new employee contract (PKWT/PKWTT/Daily)",
+        "operationId": "createContract",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreateContractRequest" }
+            }
+          }
+        },
+        "responses": { "201": { "description": "Employee contract created" }, "400": { "description": "Validation error" } }
+      }
+    },
+    "/api/v1/tenant/employee-movements/contracts/{id}": {
+      "get": {
+        "tags": ["Tenant: Employee Movement & Career Management"],
+        "summary": "Get employee contract by ID",
+        "operationId": "getContract",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "responses": { "200": { "description": "Employee contract details" }, "404": { "description": "Not found" } }
+      },
+      "put": {
+        "tags": ["Tenant: Employee Movement & Career Management"],
+        "summary": "Update employee contract",
+        "operationId": "updateContract",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/UpdateContractRequest" }
+            }
+          }
+        },
+        "responses": { "200": { "description": "Employee contract updated" } }
+      },
+      "delete": {
+        "tags": ["Tenant: Employee Movement & Career Management"],
+        "summary": "Delete employee contract",
+        "operationId": "deleteContract",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "responses": { "200": { "description": "Employee contract deleted" } }
+      }
+    },
+    "/api/v1/tenant/employee-movements/employees/{employeeId}/contracts": {
+      "get": {
+        "tags": ["Tenant: Employee Movement & Career Management"],
+        "summary": "List contracts by employee ID",
+        "operationId": "listContractsByEmployee",
+        "parameters": [
+          { "name": "employeeId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
+          { "name": "per_page", "in": "query", "schema": { "type": "integer", "default": 20 } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "responses": { "200": { "description": "Paginated list of contracts for the employee" } }
+      }
+    },
+    "/api/v1/platform/rbac/roles": {
+      "get": {
+        "tags": ["Platform: RBAC Management"],
+        "summary": "List all roles with their permissions",
+        "operationId": "listRbacRoles",
+        "x-rbac": { "permission": "role.view", "roles": ["super_admin"] },
+        "parameters": [
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
+          { "name": "per_page", "in": "query", "schema": { "type": "integer", "default": 20 } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": { "description": "Paginated list of roles with permission details" },
+          "403": { "description": "Forbidden: hanya super_admin" }
+        }
+      },
+      "post": {
+        "tags": ["Platform: RBAC Management"],
+        "summary": "Create a new role",
+        "operationId": "createRbacRole",
+        "x-rbac": { "permission": "role.create", "roles": ["super_admin"] },
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreateRoleRequest" }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "Role created — enforcer reloaded automatically" },
+          "400": { "description": "Validation error" },
+          "403": { "description": "Forbidden: hanya super_admin" }
+        }
+      }
+    },
+    "/api/v1/platform/rbac/roles/{id}": {
+      "get": {
+        "tags": ["Platform: RBAC Management"],
+        "summary": "Get role by ID with permissions",
+        "operationId": "getRbacRole",
+        "x-rbac": { "permission": "role.view", "roles": ["super_admin"] },
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": { "description": "Role details with permissions" },
+          "403": { "description": "Forbidden" },
+          "404": { "description": "Role not found" }
+        }
+      },
+      "put": {
+        "tags": ["Platform: RBAC Management"],
+        "summary": "Update role (name, description, parent)",
+        "operationId": "updateRbacRole",
+        "x-rbac": { "permission": "role.update", "roles": ["super_admin"] },
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/UpdateRoleRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Role updated — enforcer reloaded automatically" },
+          "400": { "description": "Validation error" },
+          "403": { "description": "Forbidden: hanya super_admin" }
+        }
+      },
+      "delete": {
+        "tags": ["Platform: RBAC Management"],
+        "summary": "Delete a role (non-system roles only)",
+        "operationId": "deleteRbacRole",
+        "x-rbac": { "permission": "role.delete", "roles": ["super_admin"] },
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": { "description": "Role deleted — enforcer reloaded automatically" },
+          "400": { "description": "Cannot delete system role or role not found" },
+          "403": { "description": "Forbidden: hanya super_admin" }
+        }
+      }
+    },
+    "/api/v1/platform/rbac/permissions": {
+      "get": {
+        "tags": ["Platform: RBAC Management"],
+        "summary": "List all permissions (resource + action)",
+        "operationId": "listRbacPermissions",
+        "x-rbac": { "permission": "permission.view", "roles": ["super_admin"] },
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": { "description": "List of permissions sorted by resource and action" },
+          "403": { "description": "Forbidden: hanya super_admin" }
+        }
+      },
+      "post": {
+        "tags": ["Platform: RBAC Management"],
+        "summary": "Create a new permission (resource.action)",
+        "operationId": "createRbacPermission",
+        "x-rbac": { "permission": "permission.create", "roles": ["super_admin"] },
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreatePermissionRequest" }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "Permission created" },
+          "400": { "description": "Validation error or duplicate resource+action" },
+          "403": { "description": "Forbidden: hanya super_admin" }
+        }
+      }
+    },
+    "/api/v1/platform/rbac/permissions/{id}": {
+      "delete": {
+        "tags": ["Platform: RBAC Management"],
+        "summary": "Delete a permission (non-system only)",
+        "operationId": "deleteRbacPermission",
+        "x-rbac": { "permission": "permission.delete", "roles": ["super_admin"] },
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": { "description": "Permission deleted" },
+          "400": { "description": "Cannot delete system permission or permission not found" },
+          "403": { "description": "Forbidden: hanya super_admin" }
+        }
+      }
+    },
+    "/api/v1/platform/rbac/roles/{id}/permissions": {
+      "post": {
+        "tags": ["Platform: RBAC Management"],
+        "summary": "Assign a permission to a role",
+        "operationId": "assignRbacPermission",
+        "x-rbac": { "permission": "role.update", "roles": ["super_admin"] },
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/AssignPermissionRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Permission assigned — enforcer reloaded automatically" },
+          "400": { "description": "Invalid role/permission ID or duplicate assignment" },
+          "403": { "description": "Forbidden: hanya super_admin" }
+        }
+      }
+    },
+    "/api/v1/platform/rbac/roles/{id}/permissions/{permissionId}": {
+      "delete": {
+        "tags": ["Platform: RBAC Management"],
+        "summary": "Revoke a permission from a role",
+        "operationId": "revokeRbacPermission",
+        "x-rbac": { "permission": "role.update", "roles": ["super_admin"] },
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
+          { "name": "permissionId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": { "description": "Permission revoked — enforcer reloaded automatically" },
+          "400": { "description": "Invalid role/permission ID" },
+          "403": { "description": "Forbidden: hanya super_admin" }
+        }
+      }
     }
   },
   "components": {
@@ -2661,6 +3527,441 @@
         "properties": {
           "category": { "type": "string", "enum": ["technical", "managerial"], "nullable": true },
           "weight": { "type": "number", "nullable": true }
+        }
+      },
+      "CreateCompetencyRequest": {
+        "type": "object",
+        "required": ["name"],
+        "properties": {
+          "name": { "type": "string", "maxLength": 255, "example": "Leadership" },
+          "field": { "type": "string", "maxLength": 255 },
+          "cluster": { "type": "string", "maxLength": 255 },
+          "definition": { "type": "string" }
+        }
+      },
+      "UpdateCompetencyRequest": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string", "maxLength": 255, "nullable": true },
+          "field": { "type": "string", "maxLength": 255, "nullable": true },
+          "cluster": { "type": "string", "maxLength": 255, "nullable": true },
+          "definition": { "type": "string", "nullable": true }
+        }
+      },
+      "CompetencyResponse": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "name": { "type": "string" },
+          "field": { "type": "string" },
+          "cluster": { "type": "string" },
+          "definition": { "type": "string" },
+          "created_at": { "type": "string", "format": "date-time" },
+          "updated_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "CreateCompetenceValueRequest": {
+        "type": "object",
+        "required": ["name"],
+        "properties": {
+          "type": { "type": "string", "maxLength": 255 },
+          "level": { "type": "integer" },
+          "name": { "type": "string", "maxLength": 255, "example": "Excellent" },
+          "point": { "type": "integer" },
+          "description": { "type": "string", "maxLength": 255 }
+        }
+      },
+      "UpdateCompetenceValueRequest": {
+        "type": "object",
+        "properties": {
+          "type": { "type": "string", "maxLength": 255, "nullable": true },
+          "level": { "type": "integer", "nullable": true },
+          "name": { "type": "string", "maxLength": 255, "nullable": true },
+          "point": { "type": "integer", "nullable": true },
+          "description": { "type": "string", "maxLength": 255, "nullable": true }
+        }
+      },
+      "CompetenceValueResponse": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "type": { "type": "string" },
+          "level": { "type": "integer" },
+          "name": { "type": "string" },
+          "point": { "type": "integer" },
+          "description": { "type": "string" },
+          "created_at": { "type": "string", "format": "date-time" },
+          "updated_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "CreateCompetencyValueRequest": {
+        "type": "object",
+        "required": ["type", "name", "slug", "level"],
+        "properties": {
+          "type": { "type": "string", "maxLength": 255, "example": "technical" },
+          "name": { "type": "string", "maxLength": 255, "example": "Problem Solving" },
+          "slug": { "type": "string", "maxLength": 255, "example": "problem-solving" },
+          "level": { "type": "integer", "example": 4 },
+          "code": { "type": "string", "maxLength": 255 },
+          "description": { "type": "string" }
+        }
+      },
+      "UpdateCompetencyValueRequest": {
+        "type": "object",
+        "properties": {
+          "type": { "type": "string", "maxLength": 255, "nullable": true },
+          "name": { "type": "string", "maxLength": 255, "nullable": true },
+          "slug": { "type": "string", "maxLength": 255, "nullable": true },
+          "level": { "type": "integer", "nullable": true },
+          "code": { "type": "string", "maxLength": 255, "nullable": true },
+          "description": { "type": "string", "nullable": true }
+        }
+      },
+      "CompetencyValueResponse": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "type": { "type": "string" },
+          "name": { "type": "string" },
+          "slug": { "type": "string" },
+          "level": { "type": "integer" },
+          "code": { "type": "string" },
+          "description": { "type": "string" },
+          "created_at": { "type": "string", "format": "date-time" },
+          "updated_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "CreateCompetencyEventRequest": {
+        "type": "object",
+        "required": ["type", "period_type", "period_year"],
+        "properties": {
+          "type": { "type": "string", "enum": ["auto", "manual"], "example": "manual" },
+          "period_type": { "type": "string", "enum": ["annual", "semester", "quarter"], "example": "annual" },
+          "period_year": { "type": "integer", "example": 2026 },
+          "period_number": { "type": "integer" },
+          "status": { "type": "string", "enum": ["draft", "active", "closed"] }
+        }
+      },
+      "UpdateCompetencyEventRequest": {
+        "type": "object",
+        "properties": {
+          "type": { "type": "string", "enum": ["auto", "manual"], "nullable": true },
+          "period_type": { "type": "string", "enum": ["annual", "semester", "quarter"], "nullable": true },
+          "period_year": { "type": "integer", "nullable": true },
+          "period_number": { "type": "integer", "nullable": true },
+          "status": { "type": "string", "enum": ["draft", "active", "closed"], "nullable": true }
+        }
+      },
+      "CompetencyEventResponse": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "type": { "type": "string" },
+          "period_type": { "type": "string" },
+          "period_year": { "type": "integer" },
+          "period_number": { "type": "integer" },
+          "status": { "type": "string" },
+          "created_at": { "type": "string", "format": "date-time" },
+          "updated_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "CreateCompetencyEventTargetRequest": {
+        "type": "object",
+        "required": ["competency_event_id", "organization_id"],
+        "properties": {
+          "competency_event_id": { "type": "string", "format": "uuid" },
+          "organization_id": { "type": "string", "format": "uuid" },
+          "employee_id": { "type": "string", "format": "uuid" },
+          "missing_self": { "type": "integer", "default": 0 },
+          "missing_superior": { "type": "integer", "default": 0 },
+          "missing_peer": { "type": "integer", "default": 0 },
+          "missing_subordinate": { "type": "integer", "default": 0 }
+        }
+      },
+      "UpdateCompetencyEventTargetRequest": {
+        "type": "object",
+        "properties": {
+          "employee_id": { "type": "string", "format": "uuid", "nullable": true },
+          "missing_self": { "type": "integer", "nullable": true },
+          "missing_superior": { "type": "integer", "nullable": true },
+          "missing_peer": { "type": "integer", "nullable": true },
+          "missing_subordinate": { "type": "integer", "nullable": true }
+        }
+      },
+      "CompetencyEventTargetResponse": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "competency_event_id": { "type": "string", "format": "uuid" },
+          "organization_id": { "type": "string", "format": "uuid" },
+          "employee_id": { "type": "string", "format": "uuid" },
+          "missing_self": { "type": "integer" },
+          "missing_superior": { "type": "integer" },
+          "missing_peer": { "type": "integer" },
+          "missing_subordinate": { "type": "integer" },
+          "created_at": { "type": "string", "format": "date-time" },
+          "updated_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "CreateCompetencyScoreRequest": {
+        "type": "object",
+        "required": ["organization_id"],
+        "properties": {
+          "organization_id": { "type": "string", "format": "uuid" },
+          "employee_id": { "type": "string", "format": "uuid" },
+          "technical_gap_percentage": { "type": "number", "example": 10.5 },
+          "managerial_gap_percentage": { "type": "number", "example": 15.2 },
+          "total_gap_percentage": { "type": "number", "example": 12.0 },
+          "total_grade_percentage": { "type": "number", "example": 88.0 },
+          "competency_event_id": { "type": "string", "format": "uuid" }
+        }
+      },
+      "UpdateCompetencyScoreRequest": {
+        "type": "object",
+        "properties": {
+          "technical_gap_percentage": { "type": "number", "nullable": true },
+          "managerial_gap_percentage": { "type": "number", "nullable": true },
+          "total_gap_percentage": { "type": "number", "nullable": true },
+          "total_grade_percentage": { "type": "number", "nullable": true },
+          "competency_event_id": { "type": "string", "format": "uuid", "nullable": true }
+        }
+      },
+      "CompetencyScoreResponse": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "organization_id": { "type": "string", "format": "uuid" },
+          "employee_id": { "type": "string", "format": "uuid" },
+          "technical_gap_percentage": { "type": "number" },
+          "managerial_gap_percentage": { "type": "number" },
+          "total_gap_percentage": { "type": "number" },
+          "total_grade_percentage": { "type": "number" },
+          "competency_event_id": { "type": "string", "format": "uuid" },
+          "assessed_at": { "type": "string", "format": "date-time", "nullable": true },
+          "created_at": { "type": "string", "format": "date-time" },
+          "updated_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "CreateCompetencyScoreDetailRequest": {
+        "type": "object",
+        "required": ["competency_score_id", "competency_id", "type"],
+        "properties": {
+          "competency_score_id": { "type": "string", "format": "uuid" },
+          "competency_id": { "type": "string", "format": "uuid" },
+          "type": { "type": "string", "enum": ["technical", "managerial"], "example": "technical" },
+          "standard_level": { "type": "integer" },
+          "standard_weight": { "type": "number", "default": 0 },
+          "employee_level": { "type": "integer" },
+          "gap_percentage": { "type": "number", "default": 0 },
+          "weighted_gap_percentage": { "type": "number", "default": 0 }
+        }
+      },
+      "UpdateCompetencyScoreDetailRequest": {
+        "type": "object",
+        "properties": {
+          "type": { "type": "string", "enum": ["technical", "managerial"], "nullable": true },
+          "standard_level": { "type": "integer", "nullable": true },
+          "standard_weight": { "type": "number", "nullable": true },
+          "employee_level": { "type": "integer", "nullable": true },
+          "gap_percentage": { "type": "number", "nullable": true },
+          "weighted_gap_percentage": { "type": "number", "nullable": true }
+        }
+      },
+      "CompetencyScoreDetailResponse": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "competency_score_id": { "type": "string", "format": "uuid" },
+          "competency_id": { "type": "string", "format": "uuid" },
+          "type": { "type": "string" },
+          "standard_level": { "type": "integer" },
+          "standard_weight": { "type": "number" },
+          "employee_level": { "type": "integer" },
+          "gap_percentage": { "type": "number" },
+          "weighted_gap_percentage": { "type": "number" },
+          "created_at": { "type": "string", "format": "date-time" },
+          "updated_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "CreateRoleRequest": {
+        "type": "object",
+        "required": ["name", "slug"],
+        "properties": {
+          "name": { "type": "string", "maxLength": 50, "example": "Custom Role" },
+          "slug": { "type": "string", "maxLength": 50, "example": "custom-role" },
+          "description": { "type": "string", "maxLength": 255, "nullable": true },
+          "parent_id": { "type": "string", "format": "uuid", "nullable": true, "description": "Parent role UUID for hierarchy inheritance" }
+        }
+      },
+      "UpdateRoleRequest": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string", "maxLength": 50, "nullable": true },
+          "description": { "type": "string", "maxLength": 255, "nullable": true },
+          "parent_id": { "type": "string", "format": "uuid", "nullable": true, "description": "Set to null/empty to clear parent" }
+        }
+      },
+      "PermissionInfo": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "resource": { "type": "string", "example": "employee" },
+          "action": { "type": "string", "example": "view" },
+          "description": { "type": "string" }
+        }
+      },
+      "RoleResponse": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "name": { "type": "string" },
+          "slug": { "type": "string" },
+          "description": { "type": "string" },
+          "parent_id": { "type": "string", "format": "uuid" },
+          "is_system": { "type": "boolean" },
+          "permissions": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/PermissionInfo" }
+          },
+          "created_at": { "type": "string", "format": "date-time" },
+          "updated_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "CreatePermissionRequest": {
+        "type": "object",
+        "required": ["resource", "action"],
+        "properties": {
+          "resource": { "type": "string", "maxLength": 100, "example": "new-resource" },
+          "action": { "type": "string", "maxLength": 50, "example": "export" },
+          "description": { "type": "string", "maxLength": 255, "nullable": true }
+        }
+      },
+      "PermissionResponse": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "resource": { "type": "string" },
+          "action": { "type": "string" },
+          "description": { "type": "string" },
+          "is_system": { "type": "boolean" },
+          "created_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "AssignPermissionRequest": {
+        "type": "object",
+        "required": ["permission_id"],
+        "properties": {
+          "permission_id": { "type": "string", "format": "uuid", "example": "00000000-0000-0000-0000-000000000001" }
+        }
+      },
+      "CreateMovementRequest": {
+        "type": "object",
+        "required": ["employee_id", "movement_type", "decision_letter_number", "decision_letter_date", "effective_date"],
+        "properties": {
+          "employee_id": { "type": "string", "format": "uuid", "description": "ID of the employee" },
+          "movement_type": { "type": "string", "enum": ["promotion", "demotion", "mutation", "contract_extension", "status_change", "retirement", "offboarding", "other"], "example": "promotion" },
+          "from_employment_id": { "type": "string", "format": "uuid", "nullable": true },
+          "to_employment_id": { "type": "string", "format": "uuid", "nullable": true },
+          "from_organization_id": { "type": "string", "format": "uuid", "nullable": true },
+          "to_organization_id": { "type": "string", "format": "uuid", "nullable": true },
+          "from_position_id": { "type": "string", "format": "uuid", "nullable": true },
+          "to_position_id": { "type": "string", "format": "uuid", "nullable": true },
+          "from_employment_status_id": { "type": "string", "format": "uuid", "nullable": true },
+          "to_employment_status_id": { "type": "string", "format": "uuid", "nullable": true },
+          "reason": { "type": "string", "nullable": true },
+          "decision_letter_number": { "type": "string", "example": "SK-2026-001" },
+          "decision_letter_date": { "type": "string", "format": "date", "example": "2026-07-01" },
+          "effective_date": { "type": "string", "format": "date", "example": "2026-08-01" },
+          "notes": { "type": "string", "nullable": true }
+        }
+      },
+      "UpdateMovementRequest": {
+        "type": "object",
+        "properties": {
+          "movement_type": { "type": "string", "enum": ["promotion", "demotion", "mutation", "contract_extension", "status_change", "retirement", "offboarding", "other"], "nullable": true },
+          "to_organization_id": { "type": "string", "format": "uuid", "nullable": true },
+          "to_position_id": { "type": "string", "format": "uuid", "nullable": true },
+          "to_employment_status_id": { "type": "string", "format": "uuid", "nullable": true },
+          "reason": { "type": "string", "nullable": true },
+          "decision_letter_number": { "type": "string", "nullable": true },
+          "decision_letter_date": { "type": "string", "format": "date", "nullable": true },
+          "effective_date": { "type": "string", "format": "date", "nullable": true },
+          "status": { "type": "string", "enum": ["draft", "approved", "executed", "cancelled"], "nullable": true },
+          "notes": { "type": "string", "nullable": true }
+        }
+      },
+      "MovementResponse": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "employee_id": { "type": "string", "format": "uuid" },
+          "movement_type": { "type": "string" },
+          "from_employment_id": { "type": "string", "format": "uuid", "nullable": true },
+          "to_employment_id": { "type": "string", "format": "uuid", "nullable": true },
+          "from_organization_id": { "type": "string", "format": "uuid", "nullable": true },
+          "to_organization_id": { "type": "string", "format": "uuid", "nullable": true },
+          "from_position_id": { "type": "string", "format": "uuid", "nullable": true },
+          "to_position_id": { "type": "string", "format": "uuid", "nullable": true },
+          "from_employment_status_id": { "type": "string", "format": "uuid", "nullable": true },
+          "to_employment_status_id": { "type": "string", "format": "uuid", "nullable": true },
+          "reason": { "type": "string", "nullable": true },
+          "decision_letter_number": { "type": "string" },
+          "decision_letter_date": { "type": "string", "format": "date" },
+          "effective_date": { "type": "string", "format": "date" },
+          "status": { "type": "string" },
+          "notes": { "type": "string", "nullable": true },
+          "approved_by": { "type": "string", "format": "uuid", "nullable": true },
+          "approved_at": { "type": "string", "format": "date-time", "nullable": true },
+          "executed_by": { "type": "string", "format": "uuid", "nullable": true },
+          "executed_at": { "type": "string", "format": "date-time", "nullable": true },
+          "created_at": { "type": "string", "format": "date-time" },
+          "updated_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "CreateContractRequest": {
+        "type": "object",
+        "required": ["employee_id", "contract_number", "contract_type", "start_date"],
+        "properties": {
+          "employee_id": { "type": "string", "format": "uuid" },
+          "contract_number": { "type": "string", "example": "CTR-2026-001" },
+          "contract_type": { "type": "string", "enum": ["pkwt", "pkwtt", "daily", "other"], "example": "pkwt" },
+          "start_date": { "type": "string", "format": "date", "example": "2026-01-01" },
+          "end_date": { "type": "string", "format": "date", "nullable": true, "example": "2026-12-31" },
+          "previous_contract_id": { "type": "string", "format": "uuid", "nullable": true },
+          "decision_letter_number": { "type": "string", "nullable": true },
+          "notes": { "type": "string", "nullable": true },
+          "document_url": { "type": "string", "format": "uri", "nullable": true }
+        }
+      },
+      "UpdateContractRequest": {
+        "type": "object",
+        "properties": {
+          "contract_number": { "type": "string", "nullable": true },
+          "contract_type": { "type": "string", "enum": ["pkwt", "pkwtt", "daily", "other"], "nullable": true },
+          "end_date": { "type": "string", "format": "date", "nullable": true },
+          "decision_letter_number": { "type": "string", "nullable": true },
+          "notes": { "type": "string", "nullable": true },
+          "document_url": { "type": "string", "format": "uri", "nullable": true },
+          "status": { "type": "string", "enum": ["active", "expired", "extended", "terminated"], "nullable": true }
+        }
+      },
+      "ContractResponse": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "employee_id": { "type": "string", "format": "uuid" },
+          "contract_number": { "type": "string" },
+          "contract_type": { "type": "string" },
+          "start_date": { "type": "string", "format": "date" },
+          "end_date": { "type": "string", "format": "date", "nullable": true },
+          "extension_count": { "type": "integer" },
+          "previous_contract_id": { "type": "string", "format": "uuid", "nullable": true },
+          "decision_letter_number": { "type": "string", "nullable": true },
+          "notes": { "type": "string", "nullable": true },
+          "document_url": { "type": "string", "format": "uri", "nullable": true },
+          "status": { "type": "string" },
+          "created_at": { "type": "string", "format": "date-time" },
+          "updated_at": { "type": "string", "format": "date-time" }
         }
       }
     }
